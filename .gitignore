@@ -1,0 +1,35 @@
+# CMake / Visual Studio
+/build/
+/out/
+/.vs/
+CMakeUserPresets.json
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Native output
+*.asi
+*.dll
+*.lib
+*.exp
+*.pdb
+*.obj
+*.ilk
+
+# Local Script Hook V SDK/runtime
+/vendor/
+/extern/ScriptHookV*/
+ScriptHookV.dll
+dinput8.dll
+
+# Local GTA Crime Overhaul runtime state
+/GTA_Crime_Overhaul/logs/
+/GTA_Crime_Overhaul/saves/
+*.tmp.json
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
