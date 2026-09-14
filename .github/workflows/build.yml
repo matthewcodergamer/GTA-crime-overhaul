@@ -1,0 +1,123 @@
+name: Build Native ASI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows x64 Release
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Acquire ScriptHookV SDK
+        id: sdk
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdkRoot = Join-Path $env:RUNNER_TEMP 'ScriptHookV_SDK'
+          New-Item -ItemType Directory -Force -Path $sdkRoot | Out-Null
+
+          $officialUrl = 'https://dev-c.com/files/ScriptHookV_SDK_1.0.617.1a.zip'
+          $zip = Join-Path $env:RUNNER_TEMP 'ScriptHookV_SDK.zip'
+          $officialSucceeded = $false
+
+          try {
+            Write-Host "Attempting official Script Hook V developer SDK download..."
+            Invoke-WebRequest -Uri $officialUrl -OutFile $zip -MaximumRedirection 10 -Headers @{ 'User-Agent' = 'Mozilla/5.0 GitHub-Actions GTA-Crime-Overhaul' }
+            Expand-Archive -Path $zip -DestinationPath $sdkRoot -Force
+            $officialSucceeded = $true
+          }
+          catch {
+            Write-Warning "Official developer download was unavailable to CI: $($_.Exception.Message)"
+          }
+
+          $mainHeader = Get-ChildItem -Path $sdkRoot -Recurse -File -Filter 'main.h' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -ieq 'inc' } |
+            Select-Object -First 1
+          $importLib = Get-ChildItem -Path $sdkRoot -Recurse -File -Filter 'ScriptHookV.lib' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -ieq 'lib' } |
+            Select-Object -First 1
+
+          if (-not $mainHeader -or -not $importLib) {
+            Write-Warning 'Official SDK layout was not available; using an ephemeral public SDK mirror for build headers/import library only.'
+            $mirrorRoot = Join-Path $env:RUNNER_TEMP 'scripthookv_template'
+            git clone --depth 1 https://github.com/usrbinbryce/scripthookv_template.git $mirrorRoot
+            $candidate = Join-Path $mirrorRoot 'extern\scripthookv'
+
+            if (-not (Test-Path (Join-Path $candidate 'inc\main.h'))) {
+              throw 'Fallback SDK mirror does not contain inc/main.h.'
+            }
+            if (-not (Test-Path (Join-Path $candidate 'lib\ScriptHookV.lib'))) {
+              throw 'Fallback SDK mirror does not contain lib/ScriptHookV.lib.'
+            }
+            $resolvedSdk = $candidate
+          }
+          else {
+            $incDir = $mainHeader.Directory.FullName
+            $resolvedSdk = Split-Path $incDir -Parent
+          }
+
+          Write-Host "Resolved SDK: $resolvedSdk"
+          "sdk_dir=$resolvedSdk" >> $env:GITHUB_OUTPUT
+          "SCRIPTHOOKV_SDK_DIR=$resolvedSdk" >> $env:GITHUB_ENV
+
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A x64 -DSCRIPTHOOKV_SDK_DIR="$env:SCRIPTHOOKV_SDK_DIR"
+
+      - name: Build Release ASI
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Locate ASI
+        id: locate
+        shell: pwsh
+        run: |
+          $asi = Get-ChildItem -Path build -Recurse -File -Filter 'GTA_Crime_Overhaul.asi' | Select-Object -First 1
+          if (-not $asi) {
+            throw 'GTA_Crime_Overhaul.asi was not produced.'
+          }
+          Write-Host "ASI: $($asi.FullName)"
+          "asi=$($asi.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Stage release package
+        shell: pwsh
+        run: |
+          $stage = Join-Path $pwd 'release-stage'
+          $mod = Join-Path $stage 'GTA_Crime_Overhaul'
+          New-Item -ItemType Directory -Force -Path $mod | Out-Null
+          New-Item -ItemType Directory -Force -Path (Join-Path $mod 'data') | Out-Null
+
+          Copy-Item '${{ steps.locate.outputs.asi }}' (Join-Path $stage 'GTA_Crime_Overhaul.asi')
+          Copy-Item 'config\GTA_Crime_Overhaul.ini' (Join-Path $mod 'GTA_Crime_Overhaul.ini')
+          Copy-Item 'data\*' (Join-Path $mod 'data') -Recurse -Force
+          Copy-Item 'README.md' (Join-Path $stage 'README.md')
+          Copy-Item 'docs\BUILD_AND_RELEASE.md' (Join-Path $stage 'BUILD_AND_RELEASE.md')
+
+          @'
+          Script Hook V and its ASI loader are required but are NOT included.
+          Download the current compatible runtime from the official Alexander Blade / dev-c.com Script Hook V page.
+          Story Mode / offline only.
+          '@ | Set-Content -Encoding UTF8 (Join-Path $stage 'REQUIRES_SCRIPTHOOKV.txt')
+
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath 'GTA-Crime-Overhaul.zip' -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GTA-Crime-Overhaul-${{ github.sha }}
+          path: |
+            GTA-Crime-Overhaul.zip
+            release-stage/GTA_Crime_Overhaul.asi
+          if-no-files-found: error
+          retention-days: 14
