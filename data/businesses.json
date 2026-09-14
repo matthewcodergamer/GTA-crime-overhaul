@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "businesses": [
+    {
+      "id": "prototype_24_7",
+      "type": "convenience_store",
+      "enabled": false,
+      "displayName": "Prototype 24/7",
+      "notes": "Coordinates and anchors are intentionally unset until the first in-game vertical-slice survey validates them on Legacy and Enhanced.",
+      "security": {
+        "baseLevel": 0,
+        "maxLevel": 4,
+        "panicAlarm": true,
+        "cctv": false,
+        "guardChance": 0.0
+      },
+      "cashProfile": {
+        "registerMin": 300,
+        "registerMax": 1500,
+        "safeMin": 1000,
+        "safeMax": 5000
+      },
+      "anchors": {
+        "clerk": null,
+        "registers": [],
+        "safe": null,
+        "customerZones": [],
+        "entrances": [],
+        "exits": [],
+        "cameraZones": []
+      }
+    }
+  ]
+}
