@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "currency": "USD",
+  "duffelTiers": {
+    "none": { "capacityUnits": 2, "price": 0 },
+    "small": { "capacityUnits": 20, "price": 750 },
+    "standard": { "capacityUnits": 45, "price": 2500 },
+    "large": { "capacityUnits": 80, "price": 7500 }
+  },
+  "garageServices": {
+    "repairBase": 500,
+    "repaintBase": 1000,
+    "plateChange": 1250
+  },
+  "legal": {
+    "baseImpoundFee": 1000
+  },
+  "notes": [
+    "All values are tuning placeholders until gameplay telemetry/testing exists.",
+    "Larger duffels increase maximum extractable loot; they are not purely cosmetic.",
+    "Changing a plate updates the current owned vehicle only and never rewrites historical case evidence."
+  ]
+}
