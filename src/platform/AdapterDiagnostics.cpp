@@ -117,10 +117,10 @@ AdapterProbeReport AdapterDiagnostics::probeWorld() {
         const auto vehicle = world.snapshotVehicle(vehicles.front());
         report.add(
             "world.vehicle_snapshot",
-            vehicle.has_value() ? AdapterProbeStatus::Pass : AdapterProbeStatus::Fail,
+            vehicle.has_value() ? AdapterProbeStatus::Pass : AdapterProbeStatus::Skip,
             vehicle.has_value()
                 ? "VehicleSnapshot acquired without assigning a fake project vehicle ID"
-                : "nearby vehicle became invalid before snapshot; retry after streaming stabilizes");
+                : "nearby vehicle streamed/deleted before snapshot; retry after streaming stabilizes");
     } else {
         report.add("world.vehicle_snapshot", AdapterProbeStatus::Skip, "no nearby vehicle");
     }
@@ -228,16 +228,17 @@ AdapterProbeReport AdapterDiagnostics::probeUi() {
     }
 
     BlipHandle blip = services_.ui.addBlip(*position, BlipStyle{});
-    if (blip != 0) {
+    const bool blipCreated = blip != 0;
+    if (blipCreated) {
         services_.ui.setBlipName(blip, "GCO Adapter Probe");
         services_.ui.removeBlip(blip);
     }
     report.add(
         "ui.blip",
-        blip == 0 ? AdapterProbeStatus::Pass : AdapterProbeStatus::Fail,
-        blip == 0
+        blipCreated && blip == 0 ? AdapterProbeStatus::Pass : AdapterProbeStatus::Fail,
+        blipCreated && blip == 0
             ? "temporary debug blip was created/named/removed and handle cleared"
-            : "temporary debug blip cleanup did not clear its handle");
+            : "temporary debug blip could not be created or cleanup did not clear its handle");
 
     services_.ui.subtitle("GCO adapter probe: subtitle path", 1500, true);
     report.add(
