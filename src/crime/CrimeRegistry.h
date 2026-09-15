@@ -44,7 +44,6 @@ public:
 
     [[nodiscard]] float aggregateConfidence(LogicalId caseId, EvidenceKind kind) const noexcept;
     [[nodiscard]] const CaseFile* findCase(LogicalId caseId) const noexcept;
-    [[nodiscard]] CaseFile* findCaseMutable(LogicalId caseId) noexcept;
     [[nodiscard]] const CrimeEvent* findCrime(LogicalId crimeId) const noexcept;
     [[nodiscard]] const CaseFile* findByIncidentKey(std::string_view incidentKey) const noexcept;
 
@@ -59,6 +58,7 @@ public:
     bool importCase(CaseFile file, std::vector<CrimeEvent> crimes, std::string* reason = nullptr);
 
 private:
+    [[nodiscard]] CaseFile* findCaseMutable(LogicalId caseId) noexcept;
     [[nodiscard]] bool evidenceDuplicate(const CaseFile& file, const EvidenceRecord& evidence) const;
     void refreshCaseSeverity(CaseFile& file);
 
