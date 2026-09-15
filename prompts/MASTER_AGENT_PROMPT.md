@@ -56,6 +56,19 @@ The game must not behave as if losing wanted stars erases the crime.
 
 Work one roadmap slice at a time. For the requested stage/step range:
 
+### Rule for step ranges
+
+Only group roadmap steps when they form **one atomic system change** that can be reviewed, tested and reverted as a coherent unit. A roadmap stage is not automatically a safe implementation range.
+
+Examples:
+
+- Good: `81–87` witness observation channels.
+- Good: `117–123` garage plate-changing behavior.
+- Good: `191–196` bag tiers/equip/visual attachment.
+- Bad: `77–128` because witness, identity and vehicle systems become too large to review safely.
+
+If a requested range crosses subsystem ownership, persistence boundaries, or distinct acceptance criteria, split it into the smallest safe contiguous ranges and implement only the first atomic slice unless the user explicitly requests otherwise. Never use a large range merely because the steps share a roadmap stage heading.
+
 1. State which numbered `MASTER_PLAN.md` items you are implementing.
 2. Check whether each item is `research-ready` or still needs in-game validation.
 3. If research is required, add/extend a research data file or debug harness instead of guessing.
