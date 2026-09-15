@@ -13,12 +13,13 @@
 namespace gco::identity {
 
 enum class CharacterIdentity : std::uint8_t {
-    Unknown,
+    Unknown = 0,
     Michael,
     Franklin,
     Trevor,
     FreemodeMale,
-    FreemodeFemale
+    FreemodeFemale,
+    Count
 };
 
 enum class MaskCoverage : std::uint8_t {
@@ -55,8 +56,8 @@ enum class RecognitionBehavior : std::uint8_t {
 
 struct OutfitSignature final {
     std::uint32_t modelHash = 0;
-    std::array<platform::ComponentVariation, 12> components{};
-    std::array<platform::PropVariation, 8> props{};
+    std::array<platform::PedComponentVariation, 12> components{};
+    std::array<platform::PedPropVariation, 8> props{};
     std::string stableKey;
 };
 
@@ -89,12 +90,11 @@ struct IdentitySnapshot final {
 };
 
 struct RecognitionMemory final {
-    CharacterIdentity confirmedIdentity = CharacterIdentity::Unknown;
-    float faceConfidence = 0.0f;
+    std::array<float, static_cast<std::size_t>(CharacterIdentity::Count)> faceConfidence{};
+    std::array<std::uint64_t, static_cast<std::size_t>(CharacterIdentity::Count)> firstFaceSeenAtMs{};
+    std::array<std::uint64_t, static_cast<std::size_t>(CharacterIdentity::Count)> lastFaceSeenAtMs{};
     std::string lastOutfitKey;
     float clothingConfidence = 0.0f;
-    std::uint64_t firstFaceSeenAtMs = 0;
-    std::uint64_t lastFaceSeenAtMs = 0;
     std::uint64_t lastOutfitSeenAtMs = 0;
     std::uint32_t recognitionCount = 0;
 };
@@ -133,6 +133,9 @@ public:
         const IdentitySnapshot& current,
         std::uint64_t seed = 0) const noexcept;
 
+    [[nodiscard]] float rememberedFaceConfidence(const RecognitionMemory& memory, CharacterIdentity identity) const noexcept;
+    [[nodiscard]] bool hasConfirmedIdentity(const RecognitionMemory& memory, CharacterIdentity identity) const noexcept;
+    [[nodiscard]] float confirmedFaceThreshold() const noexcept { return tuning_.confirmedFaceThreshold; }
     [[nodiscard]] bool lowerFaceBandanaCustomRequired() const noexcept { return lowerFaceBandanaCustomRequired_; }
     [[nodiscard]] std::size_t approvedMaskCount() const noexcept { return approvedMasks_.size(); }
     [[nodiscard]] std::string debugDescribe(const IdentitySnapshot& snapshot) const;
