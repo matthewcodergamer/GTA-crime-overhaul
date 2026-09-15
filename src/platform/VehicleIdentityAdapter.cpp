@@ -126,12 +126,24 @@ std::optional<int> StoryModeVehicleServicePayment::balance() const noexcept {
     return std::max(0, value);
 }
 
+bool StoryModeVehicleServicePayment::setBalance(const int amount) const noexcept {
+    const char* stat = activeCashStatName();
+    if (stat == nullptr || amount < 0) return false;
+    return STATS::STAT_SET_INT(MISC::GET_HASH_KEY(stat), amount, TRUE) != FALSE;
+}
+
 bool StoryModeVehicleServicePayment::charge(const int amount) const noexcept {
     if (amount < 0) return false;
-    const char* stat = activeCashStatName();
     const auto current = balance();
-    if (stat == nullptr || !current || *current < amount) return false;
-    return STATS::STAT_SET_INT(MISC::GET_HASH_KEY(stat), *current - amount, TRUE) != FALSE;
+    if (!current || *current < amount) return false;
+    return setBalance(*current - amount);
+}
+
+bool StoryModeVehicleServicePayment::credit(const int amount) const noexcept {
+    if (amount < 0) return false;
+    const auto current = balance();
+    if (!current) return false;
+    return setBalance(*current + amount);
 }
 
 } // namespace gco::platform
