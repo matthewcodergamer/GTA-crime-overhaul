@@ -8,10 +8,13 @@
 #include "dialogue/InvestigationDialogue.h"
 #include "identity/ClerkRecognitionDirector.h"
 #include "identity/IdentitySystem.h"
+#include "investigation/DispatchDirector.h"
+#include "investigation/InvestigationDirector.h"
 #include "platform/AdapterDiagnostics.h"
 #include "platform/FacialAnimationAdapter.h"
 #include "platform/PedPresentationAdapter.h"
 #include "platform/PlatformAdapters.h"
+#include "platform/PoliceInvestigationAdapter.h"
 #include "robbery/StoreRuntime.h"
 #include "witness/WitnessDirector.h"
 
@@ -59,6 +62,7 @@ private:
     platform::AdapterDiagnostics adapterDiagnostics_;
     platform::NativePedPresentationAdapter pedPresentation_;
     platform::NativeFacialAnimationAdapter facialAnimation_;
+    platform::NativePoliceInvestigationAdapter policeInvestigationAdapter_;
 
     Scheduler scheduler_;
     EventBus eventBus_;
@@ -73,6 +77,8 @@ private:
     robbery::PrototypeStoreRuntime storeRuntime_;
     identity::ClerkRecognitionDirector clerkRecognitionDirector_;
     witness::WitnessDirector witnessDirector_;
+    investigation::DispatchDirector dispatchDirector_;
+    investigation::InvestigationDirector investigationDirector_;
 
     std::atomic_bool stopRequested_{false};
     bool initialized_ = false;
