@@ -65,6 +65,17 @@ set(GCO_CRIME_SOURCES
     src/crime/CrimeDebugInspector.h
 )
 
+set(GCO_ROBBERY_SOURCES
+    src/robbery/StoreDomain.cpp
+    src/robbery/StoreDomain.h
+    src/robbery/StoreTarget.cpp
+    src/robbery/StoreTarget.h
+    src/robbery/StorePersistence.cpp
+    src/robbery/StorePersistence.h
+    src/robbery/StoreRuntime.cpp
+    src/robbery/StoreRuntime.h
+)
+
 add_library(GTA_Crime_Overhaul SHARED
     src/main.cpp
     src/Runtime.cpp
@@ -75,6 +86,7 @@ add_library(GTA_Crime_Overhaul SHARED
     src/Foundation.h
     src/IdStatePersistence.cpp
     ${GCO_CRIME_SOURCES}
+    ${GCO_ROBBERY_SOURCES}
     src/dialogue/InvestigationDialogue.cpp
     src/dialogue/InvestigationDialogue.h
     src/dialogue/SpeakerPresentation.cpp
@@ -89,6 +101,8 @@ add_library(GTA_Crime_Overhaul SHARED
     src/platform/FacialAnimationAdapter.h
     src/platform/PedPresentationAdapter.cpp
     src/platform/PedPresentationAdapter.h
+    src/platform/RobberyPedAdapter.cpp
+    src/platform/RobberyPedAdapter.h
 )
 
 target_include_directories(GTA_Crime_Overhaul PRIVATE
@@ -135,18 +149,14 @@ if(BUILD_TESTING)
         src/platform/PlatformTypes.cpp
         src/platform/PlatformTypes.h
     )
-    target_include_directories(GCO_PlatformTypesTests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    )
+    target_include_directories(GCO_PlatformTypesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
     add_executable(GCO_CoreServicesTests
         tests/CoreServicesTests.cpp
         src/CoreServices.cpp
         src/CoreServices.h
     )
-    target_include_directories(GCO_CoreServicesTests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    )
+    target_include_directories(GCO_CoreServicesTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(GCO_CoreServicesTests PRIVATE
         GCO_VERSION="${PROJECT_VERSION}"
         GCO_BUILD_CONFIG="$<CONFIG>"
@@ -161,14 +171,9 @@ if(BUILD_TESTING)
         src/CoreServices.cpp
         src/CoreServices.h
     )
-    target_include_directories(GCO_PersistenceTests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    )
+    target_include_directories(GCO_PersistenceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(GCO_PersistenceTests PRIVATE
-        WIN32_LEAN_AND_MEAN
-        NOMINMAX
-        UNICODE
-        _UNICODE
+        WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE
         GCO_VERSION="${PROJECT_VERSION}"
         GCO_BUILD_CONFIG="$<CONFIG>"
         GCO_GIT_SHA="${GCO_GIT_SHA}"
@@ -180,18 +185,14 @@ if(BUILD_TESTING)
         src/dialogue/InvestigationDialogue.h
         src/dialogue/SpeakerPresentation.h
     )
-    target_include_directories(GCO_InvestigationDialogueTests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    )
+    target_include_directories(GCO_InvestigationDialogueTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
     add_executable(GCO_SpeakerPresentationTests
         tests/SpeakerPresentationTests.cpp
         src/dialogue/SpeakerPresentation.cpp
         src/dialogue/SpeakerPresentation.h
     )
-    target_include_directories(GCO_SpeakerPresentationTests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    )
+    target_include_directories(GCO_SpeakerPresentationTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
     add_executable(GCO_CrimeDomainTests
         tests/CrimeDomainTests.cpp
@@ -201,9 +202,7 @@ if(BUILD_TESTING)
         src/crime/CrimeDebugInspector.cpp
         src/CoreServices.cpp
     )
-    target_include_directories(GCO_CrimeDomainTests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    )
+    target_include_directories(GCO_CrimeDomainTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(GCO_CrimeDomainTests PRIVATE
         GCO_VERSION="${PROJECT_VERSION}"
         GCO_BUILD_CONFIG="$<CONFIG>"
@@ -220,14 +219,34 @@ if(BUILD_TESTING)
         src/IdStatePersistence.cpp
         src/CoreServices.cpp
     )
-    target_include_directories(GCO_CrimePersistenceTests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    )
+    target_include_directories(GCO_CrimePersistenceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(GCO_CrimePersistenceTests PRIVATE
-        WIN32_LEAN_AND_MEAN
-        NOMINMAX
-        UNICODE
-        _UNICODE
+        WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE
+        GCO_VERSION="${PROJECT_VERSION}"
+        GCO_BUILD_CONFIG="$<CONFIG>"
+        GCO_GIT_SHA="${GCO_GIT_SHA}"
+    )
+
+    add_executable(GCO_StoreDomainTests
+        tests/StoreDomainTests.cpp
+        src/robbery/StoreDomain.cpp
+        src/CoreServices.cpp
+    )
+    target_include_directories(GCO_StoreDomainTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(GCO_StoreDomainTests PRIVATE
+        GCO_VERSION="${PROJECT_VERSION}"
+        GCO_BUILD_CONFIG="$<CONFIG>"
+        GCO_GIT_SHA="${GCO_GIT_SHA}"
+    )
+
+    add_executable(GCO_StoreTargetTests
+        tests/StoreTargetTests.cpp
+        src/robbery/StoreTarget.cpp
+        src/robbery/StoreDomain.cpp
+        src/CoreServices.cpp
+    )
+    target_include_directories(GCO_StoreTargetTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(GCO_StoreTargetTests PRIVATE
         GCO_VERSION="${PROJECT_VERSION}"
         GCO_BUILD_CONFIG="$<CONFIG>"
         GCO_GIT_SHA="${GCO_GIT_SHA}"
@@ -240,14 +259,11 @@ if(BUILD_TESTING)
         GCO_InvestigationDialogueTests
         GCO_SpeakerPresentationTests
         GCO_CrimeDomainTests
-        GCO_CrimePersistenceTests)
+        GCO_CrimePersistenceTests
+        GCO_StoreDomainTests
+        GCO_StoreTargetTests)
         if(MSVC)
-            target_compile_options(${test_target} PRIVATE
-                /W4
-                /permissive-
-                /EHsc
-                /utf-8
-            )
+            target_compile_options(${test_target} PRIVATE /W4 /permissive- /EHsc /utf-8)
         endif()
     endforeach()
 
@@ -258,6 +274,8 @@ if(BUILD_TESTING)
     add_test(NAME SpeakerPresentation COMMAND GCO_SpeakerPresentationTests)
     add_test(NAME CrimeDomain COMMAND GCO_CrimeDomainTests)
     add_test(NAME CrimePersistence COMMAND GCO_CrimePersistenceTests)
+    add_test(NAME StoreDomain COMMAND GCO_StoreDomainTests)
+    add_test(NAME StoreTarget COMMAND GCO_StoreTargetTests)
 endif()
 
 install(TARGETS GTA_Crime_Overhaul
