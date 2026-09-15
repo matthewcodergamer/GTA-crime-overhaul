@@ -22,9 +22,9 @@ The repository does **not** redistribute `ScriptHookV.dll` or the ASI loader. Do
 
 ## Current stage
 
-**Phase 0 native foundation is complete. Research/production planning is now locked for the gameplay stages.** The repository contains the buildable ASI skeleton, persistent data contracts, feasibility locks, a 390-step zero-to-complete roadmap, GTA asset/animation research, dialogue architecture, and reusable AI-agent prompts for implementing every stage without guessing engine capabilities.
+**Phase 0 native foundation and Stage 1 shared GTA adapter layer are complete.** The repository now also contains the first investigation-dialogue vertical slice: a fact-bound police/witness interview composer plus an in-game overhearing debug path. The real persistent case, witness and police-scene systems still arrive in their roadmap stages; the dialogue slice is intentionally designed so those systems can feed it structured evidence later without rewriting presentation.
 
-The next gameplay implementation target is still one fully simulated 24/7 robbery before scaling to all stores or banks.
+The next full gameplay milestone remains one polished 24/7 robbery before scaling to all stores or banks.
 
 ## Read before changing gameplay
 
@@ -37,10 +37,12 @@ Read in this order:
 5. `docs/RESEARCH_IMPLEMENTATION_PLAN.md`
 6. `docs/ASSET_ANIMATION_CATALOG.md`
 7. `docs/DIALOGUE_BIBLE.md`
-8. `docs/RESEARCH_SOURCES.md`
-9. `docs/CRIME_LAW_SYSTEM.md`
-10. `docs/ROBBERY_ECONOMY_VEHICLES.md`
-11. `docs/BUILD_AND_RELEASE.md`
+8. `docs/INVESTIGATION_DIALOGUE.md`
+9. `docs/RESEARCH_SOURCES.md`
+10. `docs/CRIME_LAW_SYSTEM.md`
+11. `docs/ROBBERY_ECONOMY_VEHICLES.md`
+12. `docs/BUILD_AND_RELEASE.md`
+13. `docs/STAGE1_NATIVE_VALIDATION.md`
 
 If a later idea conflicts with `docs/DESIGN_LOCKS.md`, update the lock deliberately rather than silently changing the design.
 
@@ -76,6 +78,7 @@ If a range crosses subsystem ownership, persistence boundaries, or distinct acce
 - Face, mask, clothing, vehicle model/color and plate evidence
 - Persistent clerks/businesses and repeat-offender recognition
 - Police return to and investigate crime scenes after the player leaves
+- **Overhearable police interviews:** officers question clerks/witnesses from actual evidence, and an unknown suspect can physically walk near the scene and hear what police currently know
 - Search areas and last-known-position logic instead of psychic tracking
 - Separate **person wanted** and **vehicle wanted** concepts
 - Garage plate changes, repainting and vehicle swapping as countermeasures
@@ -98,7 +101,15 @@ If GTA V lacks a suitable asset, create an **original GTA-compatible custom asse
 
 ## Dialogue rule
 
-Dialogue is not one repeated script. C++ emits semantic events and a data-driven selector chooses among lines using speaker archetype, personality, fear, violence, evidence actually observed, prior memory, robbery phase, cooldown groups, usage history and optional silence. Existing installed GTA speech can be referenced when it genuinely fits; exact story-specific lines are not forced into unrelated situations. Original subtitles and optional authorized voice packs cover gaps.
+Dialogue is not one repeated script. Evidence/knowledge is resolved first; presentation happens afterward. A witness may only talk about a face, mask, clothing, vehicle, plate or direction that their observation actually contains. C++ emits semantic events and the dialogue/presentation layer varies wording using speaker role, fear, prior use and context. An optional future generated-voice/TTS provider may speak or paraphrase already-approved facts, but it must never invent or upgrade case evidence.
+
+Police/witness interviews are autonomous scene events rather than player dialogue trees. If the player's identity is still unknown, simply approaching the interview does **not** reveal that the player is the suspect. Recognition belongs to the separate law/identity system. Walking out of hearing range does not pause an interview; walking back can let the player overhear whatever part is happening then.
+
+### Current dialogue debug path
+
+With `DebugHotkeys=true`, press **F7** in populated free roam. The prototype picks two nearby live non-player peds as temporary officer/witness actors, builds a synthetic masked/unknown-suspect statement, and runs the conversation every few seconds. Lines display only while the player is within the hearing radius. The demo mutates no case, warrant, economy or business data and stops safely if actors stream out or a mission/cutscene compatibility gate activates.
+
+See `docs/INVESTIGATION_DIALOGUE.md` for the production architecture and voice strategy.
 
 ## Development rule
 
