@@ -113,10 +113,20 @@ def main() -> int:
                     return True
 
                 candidates = [line for line in direct if eligible(line)]
+                if sequence and len(candidates) > 1:
+                    without_exact_repeat = [line for line in candidates if line["id"] != sequence[-1]]
+                    if without_exact_repeat:
+                        candidates = without_exact_repeat
+
                 if not candidates:
                     fallback_count += 1
                     fallback_id = event["fallbackEvent"]
                     candidates = [line for line in lines_by_event[fallback_id] if eligible(line)]
+                    if sequence and len(candidates) > 1:
+                        without_exact_repeat = [line for line in candidates if line["id"] != sequence[-1]]
+                        if without_exact_repeat:
+                            candidates = without_exact_repeat
+
                 if not candidates:
                     candidates = [line for line in lines_by_event["fallback.silent"] if matches(line, context)]
                 if not candidates:
