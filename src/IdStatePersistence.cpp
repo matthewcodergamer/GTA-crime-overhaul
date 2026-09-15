@@ -89,3 +89,5 @@ bool WorldStateStore::loadLogicalIdState(LogicalIdGenerator& generator, std::str
 
     return true;
 }
+
+} // namespace gco
