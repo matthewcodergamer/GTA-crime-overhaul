@@ -76,6 +76,39 @@ void testSnapshotDefaults() {
     expect(vehicle.plate.empty(), "vehicle plate should default empty");
 }
 
+void testSemanticPlatformContracts() {
+    using namespace gco::platform;
+
+    expect(lineOfSightProfileName(LineOfSightProfile::DefaultVisibility) == "DefaultVisibility",
+        "LOS profile must be semantic instead of exposing native flags");
+    expect(lineOfSightProfileName(LineOfSightProfile::Count) == "Unknown",
+        "invalid LOS profile should have a safe diagnostic name");
+
+    expect(inputActionName(InputAction::Interact) == "Interact", "input action name should be stable");
+    expect(inputActionName(InputAction::EnterVehicle) == "EnterVehicle", "vehicle input action name should be stable");
+    expect(inputActionName(InputAction::Count) == "Unknown", "invalid input action should not map to a GTA control");
+}
+
+void testOwnedObjectTracker() {
+    using namespace gco::platform;
+
+    OwnedObjectTracker tracker;
+    expect(!tracker.track(0), "zero object handle must never be tracked");
+    expect(tracker.track(101), "first owned object should be tracked");
+    expect(!tracker.track(101), "duplicate object handles should not be tracked twice");
+    expect(tracker.track(202), "second owned object should be tracked");
+    expect(tracker.contains(101) && tracker.contains(202), "tracker should report adopted handles");
+    expect(tracker.size() == 2, "tracker should count unique handles");
+    expect(tracker.untrack(101), "tracked handle should be releasable");
+    expect(!tracker.contains(101) && tracker.size() == 1, "release should remove exactly one handle");
+    expect(!tracker.untrack(999), "unknown handle release should fail closed");
+
+    const auto cleanup = tracker.takeAll();
+    expect(cleanup.size() == 1 && cleanup.front() == 202, "takeAll should return remaining owned handles");
+    expect(tracker.size() == 0, "takeAll should leave tracker empty for idempotent shutdown cleanup");
+    expect(tracker.takeAll().empty(), "repeated cleanup should be safe");
+}
+
 } // namespace
 
 int main() {
@@ -83,6 +116,8 @@ int main() {
     testGridFiltering();
     testMissionSuspension();
     testSnapshotDefaults();
+    testSemanticPlatformContracts();
+    testOwnedObjectTracker();
 
     if (failures != 0) {
         std::cerr << failures << " test assertion(s) failed.\n";
