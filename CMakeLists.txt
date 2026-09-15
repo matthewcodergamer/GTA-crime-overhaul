@@ -60,6 +60,7 @@ add_library(GTA_Crime_Overhaul SHARED
     src/CoreServices.h
     src/Foundation.cpp
     src/Foundation.h
+    src/IdStatePersistence.cpp
     src/platform/PlatformTypes.cpp
     src/platform/PlatformTypes.h
     src/platform/PlatformAdapters.cpp
@@ -132,6 +133,7 @@ if(BUILD_TESTING)
         tests/PersistenceTests.cpp
         src/Foundation.cpp
         src/Foundation.h
+        src/IdStatePersistence.cpp
         src/CoreServices.cpp
         src/CoreServices.h
     )
