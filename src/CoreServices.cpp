@@ -1,16 +1,18 @@
 #include "CoreServices.h"
 
 #include <algorithm>
-#include <limits>
 #include <utility>
 
 namespace gco {
+namespace {
+constexpr std::size_t kLogicalIdDomainCount = 5;
+}
 
 std::size_t LogicalIdGenerator::indexOf(const LogicalIdDomain domain) noexcept {
     const auto raw = static_cast<std::uint8_t>(domain);
     if (raw < static_cast<std::uint8_t>(LogicalIdDomain::Case)
         || raw > static_cast<std::uint8_t>(LogicalIdDomain::LootContainer)) {
-        return nextSequences_.size();
+        return kLogicalIdDomainCount;
     }
     return static_cast<std::size_t>(raw - 1U);
 }
