@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include <main.h>
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <memory>
