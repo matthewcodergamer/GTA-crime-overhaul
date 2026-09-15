@@ -51,9 +51,10 @@ bool WorldStateStore::loadLogicalIdState(LogicalIdGenerator& generator, std::str
         return false;
     }
 
-    const std::string document(
-        std::istreambuf_iterator<char>(input),
-        std::istreambuf_iterator<char>());
+    const std::string document{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
 
     const auto nextIdsPos = document.find("\"nextIds\"");
     if (nextIdsPos == std::string::npos) {
@@ -88,5 +89,3 @@ bool WorldStateStore::loadLogicalIdState(LogicalIdGenerator& generator, std::str
 
     return true;
 }
-
-} // namespace gco
