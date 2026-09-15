@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "productionRule": "Only VERIFIED_IN_GAME entries in approved may block new face capture.",
+  "lowerFaceBandana": {
+    "status": "CUSTOM_REQUIRED",
+    "reason": "No lower-face bandana has yet been validated on Franklin, Michael and Trevor in both Legacy and Enhanced. Create an original GTA-compatible asset if native protagonist clothing cannot satisfy the requirement. Never redistribute RDR2 assets."
+  },
+  "researchCandidates": [
+    {
+      "id": "freemode_male_urban_face_bandana",
+      "modelName": "mp_m_freemode_01",
+      "componentId": 1,
+      "globalDrawableHint": 51,
+      "textureHint": 2,
+      "gxt": "CLO_HSTMB_16_2",
+      "displayName": "Urban Face Bandana",
+      "coverage": "face_hidden_lower",
+      "status": "VERIFIED_DATA",
+      "source": "root-cause/v-clothingnames masks_male.json",
+      "notes": "Data-backed freemode candidate only. Global drawable indices can shift across updates; validate exact current collection/global index and visual fit in Story Mode before promotion."
+    },
+    {
+      "id": "freemode_female_urban_face_bandana",
+      "modelName": "mp_f_freemode_01",
+      "componentId": 1,
+      "globalDrawableHint": 51,
+      "textureHint": 2,
+      "gxt": "CLO_HSTFB_16_2",
+      "displayName": "Urban Face Bandana",
+      "coverage": "face_hidden_lower",
+      "status": "VERIFIED_DATA",
+      "source": "root-cause/v-clothingnames masks_female.json",
+      "notes": "Data-backed freemode candidate only. Do not treat as protagonist support until manually validated."
+    },
+    {
+      "id": "freemode_combat_mask_family",
+      "modelName": "mp_m_freemode_01",
+      "componentId": 1,
+      "globalDrawableHint": 28,
+      "textureHint": -1,
+      "displayName": "Combat Mask family",
+      "coverage": "face_hidden_full",
+      "status": "VERIFIED_DATA",
+      "source": "root-cause/v-clothingnames masks.json",
+      "notes": "Research family only; exact build/current-index and male/female fit must be verified in game."
+    }
+  ],
+  "approved": []
+}
