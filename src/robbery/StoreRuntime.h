@@ -44,6 +44,7 @@ public:
     [[nodiscard]] bool targetReady() const noexcept { return targetReady_; }
     [[nodiscard]] bool detailedActive() const noexcept { return detailedActive_; }
     [[nodiscard]] bool persistenceDirty() const noexcept { return persistenceDirty_; }
+    [[nodiscard]] platform::PedHandle boundClerkPed() const noexcept { return clerkPed_; }
     [[nodiscard]] const PrototypeStoreTarget& target() const noexcept { return target_; }
     [[nodiscard]] const PrototypeStoreModel& model() const noexcept { return model_; }
 
