@@ -31,7 +31,7 @@ int main() {
     using namespace gco::robbery;
 
     const auto root = std::filesystem::temp_directory_path()
-        / (L"gco-stage3-store-persistence-" + std::to_wstring(GetCurrentProcessId()));
+        / (L"gco-stage5-store-persistence-" + std::to_wstring(GetCurrentProcessId()));
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
 
@@ -49,7 +49,6 @@ int main() {
     WorldStateStore world(paths);
     expect(world.loadOrCreate().ok(), "base world save initializes");
 
-    // Seed an unrelated future business record; Stage 3 must preserve records it does not own.
     std::string document = world.emptyWorldJson();
     const auto businesses = document.find("\"businesses\": []");
     expect(businesses != std::string::npos, "empty world has reserved businesses section");
@@ -75,6 +74,13 @@ int main() {
     const LogicalId clerkId = original.persistent().clerk.id;
     expect(businessId != 0 && clerkId != 0, "initial business/clerk IDs allocated");
 
+    auto& recognition = original.persistent().clerk.recognition;
+    recognition.faceConfidence[static_cast<std::size_t>(identity::CharacterIdentity::Franklin)] = 0.88f;
+    recognition.lastOutfitKey = "franklin|C:3=10.0.0";
+    recognition.clothingConfidence = 0.81f;
+    recognition.lastOutfitSeenAtMs = 1800;
+    recognition.recognitionCount = 2;
+
     original.beginThreat(1100);
     auto sources = PrototypeStoreModel::makeCashSources(
         1, false, 500, 500, 0, 0, original.persistent().clerk, 88);
@@ -96,7 +102,12 @@ int main() {
     const std::string saved = readText(paths.worldSave);
     expect(saved.find("future_other_business") != std::string::npos, "store save preserves unrelated business records");
     expect(saved.find("prototype_store_state") != std::string::npos, "store save writes owned business record");
+    expect(saved.find("\"modelVersion\": 2") != std::string::npos, "Stage 5 writes store modelVersion 2");
     expect(saved.find("\"clerkVacant\": true") != std::string::npos, "clerk vacancy is persisted");
+    expect(saved.find("\"clerkFaceFranklin\": 0.8800") != std::string::npos,
+        "clerk face-memory confidence is serialized");
+    expect(saved.find("\"clerkLastOutfitKey\": \"franklin|C:3=10.0.0\"") != std::string::npos,
+        "clerk outfit memory is serialized");
 
     LogicalIdGenerator reloadedIds;
     expect(world.loadLogicalIdState(reloadedIds, &reason), "base logical ID counters reload after store save");
@@ -112,6 +123,12 @@ int main() {
     expect(state.robberyCount == 1, "robbery count survives save/load");
     expect(state.lastCaseId == makeLogicalId(LogicalIdDomain::Case, 1), "last case relationship survives save/load");
     expect(state.totalCashExposed > 0, "finite cash-source exposure contributes to persistent business history");
+    expect(state.clerk.recognition.faceConfidence[static_cast<std::size_t>(identity::CharacterIdentity::Franklin)] > 0.87f,
+        "same logical clerk retains face memory after save/load");
+    expect(state.clerk.recognition.lastOutfitKey == "franklin|C:3=10.0.0",
+        "same logical clerk retains outfit memory after save/load");
+    expect(state.clerk.recognition.recognitionCount == 2,
+        "same logical clerk retains recognition history after save/load");
     expect(reloadedIds.nextSequence(LogicalIdDomain::Business) > logicalIdSequence(businessId), "business ID counter resumes above persisted ID");
     expect(reloadedIds.nextSequence(LogicalIdDomain::Clerk) > logicalIdSequence(clerkId), "clerk ID counter resumes above persisted ID");
 
@@ -120,6 +137,27 @@ int main() {
     expect(reloaded.persistent().clerk.id != clerkId, "replacement after reload gets a new logical Clerk ID");
     expect(reloaded.persistent().clerk.generation == 2, "replacement generation remains continuous after reload");
     expect(reloaded.persistent().businessId == businessId, "business identity remains stable across clerk replacement");
+    expect(reloaded.persistent().clerk.recognition.faceConfidence[static_cast<std::size_t>(identity::CharacterIdentity::Franklin)] == 0.0f,
+        "replacement clerk does not inherit dead clerk's personal face memory");
+    expect(reloaded.persistent().clerk.recognition.lastOutfitKey.empty(),
+        "replacement clerk does not inherit dead clerk's outfit memory");
+
+    // Migration check: Stage 3 modelVersion 1 remains loadable and initializes Stage 5 memory empty.
+    std::string legacyDocument = saved;
+    const auto versionPos = legacyDocument.find("\"modelVersion\": 2");
+    expect(versionPos != std::string::npos, "saved document has migration source version");
+    if (versionPos != std::string::npos) {
+        legacyDocument.replace(versionPos, std::string("\"modelVersion\": 2").size(), "\"modelVersion\": 1");
+        expect(world.writeWorldAtomically(legacyDocument), "legacy v1 compatibility fixture writes");
+        LogicalIdGenerator legacyIds;
+        expect(world.loadLogicalIdState(legacyIds, &reason), "legacy ID state loads");
+        PrototypeStoreModel legacy;
+        expect(persistence.load(legacy, legacyIds, 3600, tuning, &reason), "Stage 3 modelVersion 1 migrates safely");
+        expect(legacy.persistent().clerk.recognition.faceConfidence[static_cast<std::size_t>(identity::CharacterIdentity::Franklin)] == 0.0f,
+            "legacy v1 save starts new recognition memory empty rather than inventing history");
+        expect(legacy.persistent().clerk.recognition.lastOutfitKey.empty(),
+            "legacy v1 save has no fabricated outfit memory");
+    }
 
     std::filesystem::remove_all(root, ec);
     if (failures != 0) {

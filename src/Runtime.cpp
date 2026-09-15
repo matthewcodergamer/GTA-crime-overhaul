@@ -85,9 +85,16 @@ Runtime::Runtime()
           crimeRegistry_,
           idGenerator_,
           eventBus_),
+      clerkRecognitionDirector_(
+          platform_,
+          identitySystem_,
+          storeRuntime_,
+          crimeDirector_,
+          eventBus_),
       witnessDirector_(
           platform_,
           pedPresentation_,
+          identitySystem_,
           crimeDirector_,
           crimeRegistry_,
           eventBus_) {}
@@ -151,6 +158,17 @@ bool Runtime::initialize() {
         Logger::instance().warn("PersistentCases=false; case save/load is disabled for this session.");
     }
 
+    std::string identityReason;
+    if (!identitySystem_.loadMaskCatalog(paths_.dataRoot / L"identity" / L"mask_catalog.json", &identityReason)) {
+        Logger::instance().warn("Identity mask catalog unavailable: " + identityReason);
+    } else {
+        Logger::instance().info("Identity mask catalog: " + identityReason);
+    }
+    if (identitySystem_.lowerFaceBandanaCustomRequired()) {
+        Logger::instance().warn(
+            "Lower-face protagonist bandana remains CUSTOM_REQUIRED. GTA/RDR2 assets are not copied; identity gameplay continues without an authoritative bandana until an original or validated GTA V option exists.");
+    }
+
     witnessDirector_.initialize();
 
     if (config_.robberySystem) {
@@ -163,6 +181,7 @@ bool Runtime::initialize() {
             Logger::instance().error("Unable to persist initial prototype store state: " + storeReason);
             return false;
         }
+        clerkRecognitionDirector_.initialize();
     } else {
         Logger::instance().warn("RobberySystem=false; prototype-store runtime is disabled for this session.");
     }
@@ -180,7 +199,7 @@ bool Runtime::initialize() {
 
     eventBus_.publish(RuntimeEvent{"runtime.started", 0, std::string(BuildInfo::Version)});
     Logger::instance().info("Native ASI runtime initialized successfully.");
-    Logger::instance().info("Debug hotkeys: F3=toggle witness FOV/LOS debug, F4=prototype-store survey candidate, F5=case inspector, F6=synthetic Stage 2 case/save/reload test, F7=investigation dialogue demo, F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
+    Logger::instance().info("Debug hotkeys: F3=toggle witness FOV/LOS debug, F4=prototype-store survey candidate, F5=case inspector, F6=synthetic Stage 2 case/save/reload test, F7=investigation dialogue demo, F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true). Commands: identity.inspect, store.inspect, witness.inspect.");
     return true;
 }
 
@@ -214,6 +233,18 @@ void Runtime::configureDebugCommands() {
     debugCommands_.registerCommand("validate_save", [this]() { validateSaveDiagnostic(); });
     debugCommands_.registerCommand("crime.inspect", [this]() { logCaseInspector(); });
     debugCommands_.registerCommand("crime.synthetic", [this]() { runSyntheticCrimeDiagnostic(); });
+    debugCommands_.registerCommand("identity.inspect", [this]() {
+        const auto player = platform_.world.playerPed();
+        const auto snapshot = platform_.world.snapshotPed(player);
+        if (!snapshot) {
+            Logger::instance().warn("identity.inspect requires a live player snapshot.");
+            return;
+        }
+        Logger::instance().info("Player identity: " + identitySystem_.debugDescribe(identitySystem_.snapshot(*snapshot)));
+        if (config_.robberySystem && storeRuntime_.initialized()) {
+            Logger::instance().info(clerkRecognitionDirector_.debugSummary());
+        }
+    });
     debugCommands_.registerCommand("witness.debug_toggle", [this]() {
         witnessDirector_.toggleDebug();
         Logger::instance().info(std::string("Witness spatial/FOV/LOS debug ")
@@ -226,7 +257,10 @@ void Runtime::configureDebugCommands() {
         if (config_.robberySystem) storeRuntime_.debugSurveyCurrentPosition();
     });
     debugCommands_.registerCommand("store.inspect", [this]() {
-        if (config_.robberySystem) storeRuntime_.debugInspect();
+        if (config_.robberySystem) {
+            storeRuntime_.debugInspect();
+            Logger::instance().info(clerkRecognitionDirector_.debugSummary());
+        }
     });
     debugCommands_.registerCommand("store.demand.open_register", [this]() {
         if (config_.robberySystem) storeRuntime_.debugIssueDemand(robbery::StoreDemand::OpenRegister, persistentNowMs());
@@ -375,6 +409,7 @@ void Runtime::tickFiveHz() {
     const auto persistentNow = persistentNowMs();
     if (config_.robberySystem) {
         storeRuntime_.tickFiveHz(persistentNow, gameplayAllowed);
+        clerkRecognitionDirector_.tickFiveHz(persistentNow, gameplayAllowed);
     }
     witnessDirector_.tickFiveHz(
         persistentNow,
@@ -413,7 +448,7 @@ void Runtime::tickFiveHz() {
 }
 
 void Runtime::tickTwoHz() {
-    // Witness perception is intentionally budgeted across the existing 5 Hz lane; Stage 7 later owns police scenes.
+    // Witness perception and Stage 5 identity recognition are budgeted on the existing 5 Hz lane.
 }
 
 void Runtime::tickOneHz() {
@@ -435,10 +470,13 @@ void Runtime::tickOneHz() {
             }
         }
 
-        // Stage 4 currently checkpoints while an incident is live. The WitnessDirector only
-        // writes meaningful reported observations into the case, never ambient candidate state.
-        if (config_.persistentCases && witnessDirector_.incidentActive()) {
-            saveCrimeState("witness observation/report checkpoint");
+        const bool witnessCaseDirty = config_.persistentCases && witnessDirector_.casePersistenceDirty();
+        const bool clerkCaseDirty = config_.persistentCases && clerkRecognitionDirector_.casePersistenceDirty();
+        if (witnessCaseDirty || clerkCaseDirty) {
+            if (saveCrimeState("witness/identity evidence checkpoint")) {
+                if (witnessCaseDirty) witnessDirector_.clearCasePersistenceDirty();
+                if (clerkCaseDirty) clerkRecognitionDirector_.clearCasePersistenceDirty();
+            }
         }
     }
 
@@ -500,7 +538,7 @@ void Runtime::handleDebugHotkeys() {
 
 void Runtime::renderDebugOverlay() {
     std::ostringstream text;
-    text << "GCO Stage 4 | " << BuildInfo::Version
+    text << "GCO Stage 5 | " << BuildInfo::Version
          << " | " << compatibilityLevelName(missionGate_.level())
          << " | Wanted " << platform_.world.wantedLevel()
          << " | Cases " << crimeRegistry_.caseCount();
@@ -900,11 +938,14 @@ void Runtime::logDiagnostics() {
         << ", ownedProps=" << platform_.props.ownedCount()
         << ", cases=" << crimeRegistry_.caseCount()
         << ", crimes=" << crimeRegistry_.crimeCount()
+        << ", approvedMasks=" << identitySystem_.approvedMaskCount()
+        << ", lowerFaceBandanaCustomRequired=" << (identitySystem_.lowerFaceBandanaCustomRequired() ? "true" : "false")
         << ", storeReady=" << (config_.robberySystem && storeRuntime_.targetReady() ? "true" : "false")
         << ", storeDetailed=" << (config_.robberySystem && storeRuntime_.detailedActive() ? "true" : "false")
         << ", witnessIncident=" << (witnessDirector_.incidentActive() ? "true" : "false")
         << ", witnessCandidates=" << witnessDirector_.candidateCount()
         << ", witnessDebug=" << (witnessDirector_.debugEnabled() ? "true" : "false")
+        << ", clerkRecognition=" << identity::recognitionLevelName(clerkRecognitionDirector_.lastRecognition().level)
         << ", investigationDemoActive=" << (!investigationDemoPlan_.empty() ? "true" : "false")
         << ", schedulerTasks=" << scheduler_.recurringTaskCount()
         << ", queuedTasks=" << scheduler_.queuedTaskCount()
@@ -980,7 +1021,7 @@ void Runtime::validateSaveDiagnostic() {
         }
     }
 
-    Logger::instance().info("Debug save validation PASS: world schema, logical IDs, cases and prototype business/clerk persistence are valid.");
+    Logger::instance().info("Debug save validation PASS: world schema, logical IDs, cases, prototype business/clerk memory and Stage 5 recognition fields are valid.");
 }
 
 void Runtime::shutdown() {
@@ -993,6 +1034,7 @@ void Runtime::shutdown() {
     stopInvestigationDialogueDemo("runtime shutdown");
 
     if (config_.robberySystem) {
+        clerkRecognitionDirector_.shutdown();
         storeRuntime_.shutdown(persistentNowMs());
     }
     witnessDirector_.shutdown();

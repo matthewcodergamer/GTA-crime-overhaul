@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iomanip>
-#include <sstream>
 
 namespace gco::witness {
 namespace {
@@ -40,7 +38,7 @@ float durationQuality(const std::uint64_t accumulatedViewMs) noexcept {
 
 bool WitnessObservation::meaningful() const noexcept {
     return heardThreat || heardGunshot || heardWitnessViolence || sawCrime || sawWitnessViolence
-        || faceCover.observed || outfit.observed || weapon.observed || vehicle.observed
+        || faceCover.observed || faceIdentity.observed || outfit.observed || weapon.observed || vehicle.observed
         || plate.observed || lastKnownDirection.observed;
 }
 
@@ -80,8 +78,6 @@ float angularFrontQuality(
     if (length <= 0.001f) return 1.0f;
 
     const float heading = headingDegrees * kPi / 180.0f;
-    // GTA heading 0 points north (+Y), +90 points west/east depending world convention.
-    // Only absolute angular alignment matters for perception quality.
     const float fx = -std::sin(heading);
     const float fy = std::cos(heading);
     const float dot = std::clamp((fx * dx + fy * dy) / length, -1.0f, 1.0f);
@@ -118,21 +114,6 @@ float plateGeometryQuality(
     return clamp01(axisQuality * distanceQuality);
 }
 
-std::string outfitSignature(const platform::PedSnapshot& ped) {
-    std::ostringstream out;
-    out << std::hex << std::uppercase << ped.modelHash << ':';
-    for (std::size_t i = 0; i < ped.components.size(); ++i) {
-        if (i != 0) out << ',';
-        out << std::dec << ped.components[i].drawable << '.' << ped.components[i].texture;
-    }
-    out << "|P:";
-    for (std::size_t i = 0; i < ped.props.size(); ++i) {
-        if (i != 0) out << ',';
-        out << ped.props[i].drawable << '.' << ped.props[i].texture;
-    }
-    return out.str();
-}
-
 void applyPerceptionSample(
     WitnessObservation& observation,
     const PerceptionSample& sample,
@@ -145,9 +126,7 @@ void applyPerceptionSample(
     observation.heardGunshot = observation.heardGunshot || sample.heardGunshot;
     observation.heardWitnessViolence = observation.heardWitnessViolence || sample.heardWitnessViolence;
 
-    if (!sample.inFov || !sample.clearLos || sample.distance > policy.visualRadius) {
-        return;
-    }
+    if (!sample.inFov || !sample.clearLos || sample.distance > policy.visualRadius) return;
 
     observation.accumulatedVisualMs += sample.visualDeltaMs;
     const float base = visualConfidence(
@@ -165,15 +144,23 @@ void applyPerceptionSample(
     observation.sawCrime = true;
     observation.sawWitnessViolence = observation.sawWitnessViolence || sample.sawWitnessViolence;
 
-    const float faceConfidence = clamp01(base * sample.faceViewQuality);
-    if (sample.faceCover != FaceCoverKnowledge::Unknown) {
-        const std::uint64_t minimum = sample.faceCover == FaceCoverKnowledge::FaceVisible
-            ? policy.faceMinimumViewMs : 120;
-        if (observation.accumulatedVisualMs >= minimum && faceConfidence >= policy.faceEvidenceThreshold) {
-            updateFact(observation.faceCover, sample.faceCover, faceConfidence, nowMs);
+    if (sample.faceCover == FaceCoverKnowledge::FaceCovered) {
+        if (observation.accumulatedVisualMs >= 120 && base >= policy.faceEvidenceThreshold) {
+            updateFact(observation.faceCover, FaceCoverKnowledge::FaceCovered, base, nowMs);
+        }
+    } else if (sample.faceCover == FaceCoverKnowledge::FaceVisible) {
+        const float faceConfidence = clamp01(base * sample.faceViewQuality);
+        if (observation.accumulatedVisualMs >= policy.faceMinimumViewMs
+            && faceConfidence >= policy.faceEvidenceThreshold) {
+            updateFact(observation.faceCover, FaceCoverKnowledge::FaceVisible, faceConfidence, nowMs);
+            if (sample.faceCaptureAllowed && sample.characterIdentity != identity::CharacterIdentity::Unknown) {
+                // Historical face identity is write-on-observation. Later masks never clear this fact.
+                updateFact(observation.faceIdentity, sample.characterIdentity, faceConfidence, nowMs);
+            }
         }
     }
 
+    // Clothing remains observable while the face is covered.
     if (!sample.outfitSignature.empty() && base >= policy.outfitEvidenceThreshold) {
         updateFact(observation.outfit, sample.outfitSignature, base, nowMs);
     }

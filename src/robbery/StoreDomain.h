@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreServices.h"
+#include "identity/IdentitySystem.h"
 
 #include <array>
 #include <cstdint>
@@ -98,10 +99,11 @@ struct ClerkProfile final {
     float alarmTendency = 0.3f;
     float resistance = 0.1f;
     float withholdingTendency = 0.1f;
+    identity::RecognitionMemory recognition{};
 };
 
 struct StorePersistentState final {
-    static constexpr std::uint32_t ModelVersion = 1;
+    static constexpr std::uint32_t ModelVersion = 2;
 
     LogicalId businessId = 0;
     std::string targetKey = "prototype_24_7";

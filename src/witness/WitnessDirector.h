@@ -3,6 +3,7 @@
 #include "WitnessDomain.h"
 #include "crime/CrimeDirector.h"
 #include "crime/CrimeRegistry.h"
+#include "identity/IdentitySystem.h"
 #include "platform/PedPresentationAdapter.h"
 #include "platform/PlatformAdapters.h"
 #include "platform/RobberyPedAdapter.h"
@@ -31,6 +32,7 @@ public:
     WitnessDirector(
         platform::PlatformServices& platform,
         platform::NativePedPresentationAdapter& pedPresentation,
+        identity::IdentitySystem& identitySystem,
         crime::CrimeDirector& crimeDirector,
         crime::CrimeRegistry& crimeRegistry,
         EventBus& events,
@@ -107,12 +109,12 @@ private:
 
     [[nodiscard]] static std::optional<LogicalId> payloadId(std::string_view payload, std::string_view key);
     [[nodiscard]] static WeaponClass mapWeaponClass(platform::PerceivedWeaponClass value) noexcept;
-    [[nodiscard]] static FaceCoverKnowledge mapFaceCover(platform::FaceCoverState value) noexcept;
 
     platform::PlatformServices& platform_;
     platform::NativePedPresentationAdapter& pedPresentation_;
     platform::NativeRobberyPedAdapter behaviorPed_;
     platform::NativeWitnessPerceptionAdapter perception_;
+    identity::IdentitySystem& identitySystem_;
     crime::CrimeDirector& crimeDirector_;
     crime::CrimeRegistry& crimeRegistry_;
     EventBus& events_;

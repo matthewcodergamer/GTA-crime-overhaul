@@ -36,12 +36,14 @@ std::string vehicleDescriptor(const VehicleVisual& value) {
 WitnessDirector::WitnessDirector(
     platform::PlatformServices& platform,
     platform::NativePedPresentationAdapter& pedPresentation,
+    identity::IdentitySystem& identitySystem,
     crime::CrimeDirector& crimeDirector,
     crime::CrimeRegistry& crimeRegistry,
     EventBus& events,
     WitnessDirectorTuning tuning)
     : platform_(platform),
       pedPresentation_(pedPresentation),
+      identitySystem_(identitySystem),
       crimeDirector_(crimeDirector),
       crimeRegistry_(crimeRegistry),
       events_(events),
@@ -138,10 +140,7 @@ void WitnessDirector::tickFiveHz(
         if (index < candidates_.size()) sampleCandidate(candidates_[index], persistentNowMs);
     }
 
-    for (auto& candidate : candidates_) {
-        advanceReport(candidate, persistentNowMs);
-    }
-
+    for (auto& candidate : candidates_) advanceReport(candidate, persistentNowMs);
     prune(persistentNowMs);
 }
 
@@ -269,8 +268,14 @@ void WitnessDirector::sampleCandidate(Candidate& candidate, const std::uint64_t 
             playerSnapshot->heading,
             snapshot->position,
             78.0f);
-        sample.faceCover = mapFaceCover(perception_.faceCoverState(player));
-        sample.outfitSignature = outfitSignature(*playerSnapshot);
+
+        const auto identitySnapshot = identitySystem_.snapshot(*playerSnapshot);
+        sample.faceCaptureAllowed = identitySnapshot.faceCaptureAllowed;
+        sample.characterIdentity = identitySnapshot.character;
+        sample.faceCover = identitySnapshot.mask.blocksNewFaceCapture
+            ? FaceCoverKnowledge::FaceCovered
+            : FaceCoverKnowledge::FaceVisible;
+        sample.outfitSignature = identitySnapshot.outfit.stableKey;
         sample.directionVisible = true;
         sample.direction = DirectionVisual{playerSnapshot->position, playerSnapshot->heading};
 
@@ -284,10 +289,7 @@ void WitnessDirector::sampleCandidate(Candidate& candidate, const std::uint64_t 
                     platform::LineOfSightProfile::DefaultVisibility);
                 if (vehicleLos) {
                     sample.vehicleVisible = true;
-                    sample.vehicle = VehicleVisual{
-                        vehicle->modelHash,
-                        vehicle->primaryColor,
-                        vehicle->secondaryColor};
+                    sample.vehicle = VehicleVisual{vehicle->modelHash, vehicle->primaryColor, vehicle->secondaryColor};
                     const float vehicleDistance = distance(snapshot->position, vehicle->position);
                     sample.plateViewQuality = plateGeometryQuality(
                         snapshot->position,
@@ -309,9 +311,7 @@ void WitnessDirector::sampleCandidate(Candidate& candidate, const std::uint64_t 
     candidate.lastHeard = sample.heardThreat || sample.heardGunshot || sample.heardWitnessViolence;
     candidate.lastVisualConfidence = candidate.observation.bestVisualConfidence;
 
-    if (!candidate.reactionPlanned && candidate.observation.meaningful()) {
-        planReaction(candidate, nowMs);
-    }
+    if (!candidate.reactionPlanned && candidate.observation.meaningful()) planReaction(candidate, nowMs);
 }
 
 void WitnessDirector::planReaction(Candidate& candidate, const std::uint64_t nowMs) {
@@ -396,16 +396,12 @@ void WitnessDirector::advanceReport(Candidate& candidate, const std::uint64_t no
         persistDetailedEvidence(candidate, nowMs);
         if (const auto* file = crimeRegistry_.findCase(incident_.caseId);
             file != nullptr && file->state == crime::CaseState::Reporting) {
-            crimeDirector_.markReported(file->id, nowMs);
+            if (crimeDirector_.markReported(file->id, nowMs)) casePersistenceDirty_ = true;
         }
         events_.publish(RuntimeEvent{"witness.report_completed", incident_.caseId, candidate.sourceKey});
         break;
     case ReportingAdvance::Interrupted:
         events_.publish(RuntimeEvent{"witness.report_interrupted", incident_.caseId, candidate.sourceKey});
-        if (candidate.report.basicFactsCommitted) {
-            // Any facts already committed remain immutable case evidence. Interrupting one caller
-            // never erases this or evidence supplied by another witness.
-        }
         break;
     case ReportingAdvance::Refused:
         events_.publish(RuntimeEvent{"witness.report_refused", incident_.caseId, candidate.sourceKey});
@@ -443,20 +439,26 @@ void WitnessDirector::persistBasicEvidence(Candidate& candidate, const std::uint
 
     if (const auto* file = crimeRegistry_.findCase(incident_.caseId);
         file != nullptr && file->state == crime::CaseState::Observed) {
-        crimeDirector_.beginReporting(file->id, nowMs);
+        if (crimeDirector_.beginReporting(file->id, nowMs)) casePersistenceDirty_ = true;
     }
 }
 
 void WitnessDirector::persistDetailedEvidence(Candidate& candidate, const std::uint64_t nowMs) {
     const auto& observation = candidate.observation;
-    if (observation.faceCover.observed) {
-        if (observation.faceCover.value == FaceCoverKnowledge::FaceVisible) {
-            persistEvidence(candidate, crime::EvidenceKind::Face, observation.faceCover.confidence,
-                observation.faceCover.observedAtMs, "witness_saw_uncovered_face", candidate.lastPosition);
-        } else if (observation.faceCover.value == FaceCoverKnowledge::FaceCovered) {
-            persistEvidence(candidate, crime::EvidenceKind::Mask, observation.faceCover.confidence,
-                observation.faceCover.observedAtMs, "witness_saw_face_cover", candidate.lastPosition);
-        }
+
+    // Face identity and current mask state are independent historical facts. If the face was
+    // seen before the player masked up, faceIdentity remains present and is persisted here.
+    if (observation.faceIdentity.observed) {
+        persistEvidence(candidate, crime::EvidenceKind::Face, observation.faceIdentity.confidence,
+            observation.faceIdentity.observedAtMs, "witness_saw_uncovered_face", candidate.lastPosition);
+        persistEvidence(candidate, crime::EvidenceKind::Identity, observation.faceIdentity.confidence,
+            observation.faceIdentity.observedAtMs,
+            "character_identity=" + std::string(identity::characterIdentityName(observation.faceIdentity.value)),
+            candidate.lastPosition);
+    }
+    if (observation.faceCover.observed && observation.faceCover.value == FaceCoverKnowledge::FaceCovered) {
+        persistEvidence(candidate, crime::EvidenceKind::Mask, observation.faceCover.confidence,
+            observation.faceCover.observedAtMs, "witness_saw_approved_face_cover", candidate.lastPosition);
     }
     if (observation.outfit.observed) {
         persistEvidence(candidate, crime::EvidenceKind::Clothing, observation.outfit.confidence,
@@ -511,14 +513,14 @@ void WitnessDirector::persistEvidence(
     evidence.dedupKey = candidate.sourceKey + ":" + std::string(crime::evidenceKindName(kind));
     evidence.snapshot.descriptor = std::move(descriptor);
     evidence.snapshot.location = crimeLocation(location, "witness_observation");
-    crimeDirector_.addEvidence(incident_.caseId, std::move(evidence));
+    if (crimeDirector_.addEvidence(incident_.caseId, std::move(evidence)) == crime::EvidenceAddResult::Added) {
+        casePersistenceDirty_ = true;
+    }
 }
 
 void WitnessDirector::markViolence(const platform::Vec3& origin, const std::uint64_t nowMs) {
     incident_.violenceOrigin = origin;
-    incident_.violenceNoiseUntilMs = std::max(
-        incident_.violenceNoiseUntilMs,
-        nowMs + tuning_.violenceNoiseWindowMs);
+    incident_.violenceNoiseUntilMs = std::max(incident_.violenceNoiseUntilMs, nowMs + tuning_.violenceNoiseWindowMs);
 }
 
 void WitnessDirector::prune(const std::uint64_t nowMs) {
@@ -570,9 +572,7 @@ void WitnessDirector::renderDebug() const {
             tuning_.perception.halfFovDegrees,
             tuning_.perception.visualRadius,
             color);
-        if (playerPosition) {
-            platform_.debugDraw.line(candidate.lastPosition, *playerPosition, color);
-        }
+        if (playerPosition) platform_.debugDraw.line(candidate.lastPosition, *playerPosition, color);
     }
 }
 
@@ -593,6 +593,8 @@ std::string WitnessDirector::debugSummary() const {
             << " visualConfidence=" << candidate.lastVisualConfidence
             << " face=" << (candidate.observation.faceCover.observed
                 ? std::string(faceCoverKnowledgeName(candidate.observation.faceCover.value)) : "none")
+            << " identity=" << (candidate.observation.faceIdentity.observed
+                ? std::string(identity::characterIdentityName(candidate.observation.faceIdentity.value)) : "none")
             << " plate=" << (candidate.observation.plate.observed ? candidate.observation.plate.value : "none");
     }
     return out.str();
@@ -607,7 +609,9 @@ std::optional<LogicalId> WitnessDirector::payloadId(
     if (start == std::string_view::npos) return std::nullopt;
     const std::size_t valueStart = start + prefix.size();
     const std::size_t end = payload.find(';', valueStart);
-    const std::string text(payload.substr(valueStart, end == std::string_view::npos ? payload.size() - valueStart : end - valueStart));
+    const std::string text(payload.substr(
+        valueStart,
+        end == std::string_view::npos ? payload.size() - valueStart : end - valueStart));
     try {
         const auto value = static_cast<LogicalId>(std::stoull(text));
         if (value == 0) return std::nullopt;
@@ -632,15 +636,6 @@ WeaponClass WitnessDirector::mapWeaponClass(const platform::PerceivedWeaponClass
     case platform::PerceivedWeaponClass::Thrown: return WeaponClass::Thrown;
     }
     return WeaponClass::Unknown;
-}
-
-FaceCoverKnowledge WitnessDirector::mapFaceCover(const platform::FaceCoverState value) noexcept {
-    switch (value) {
-    case platform::FaceCoverState::Unknown: return FaceCoverKnowledge::Unknown;
-    case platform::FaceCoverState::Uncovered: return FaceCoverKnowledge::FaceVisible;
-    case platform::FaceCoverState::Covered: return FaceCoverKnowledge::FaceCovered;
-    }
-    return FaceCoverKnowledge::Unknown;
 }
 
 } // namespace gco::witness
