@@ -46,6 +46,21 @@ bool keyDown(const int virtualKey) {
     return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 }
 
+dialogue::VoiceGender dialogueVoiceGender(const platform::PedVoiceGender gender) noexcept {
+    switch (gender) {
+    case platform::PedVoiceGender::Masculine: return dialogue::VoiceGender::Masculine;
+    case platform::PedVoiceGender::Feminine: return dialogue::VoiceGender::Feminine;
+    case platform::PedVoiceGender::Unknown: break;
+    }
+    return dialogue::VoiceGender::Unknown;
+}
+
+dialogue::SpeakerRole demoRoleFor(const dialogue::InterviewSpeaker speaker) noexcept {
+    return speaker == dialogue::InterviewSpeaker::Officer
+        ? dialogue::SpeakerRole::InvestigatingOfficer
+        : dialogue::SpeakerRole::Clerk;
+}
+
 } // namespace
 
 Runtime::Runtime()
@@ -385,6 +400,7 @@ void Runtime::startInvestigationDialogueDemo() {
         16);
 
     platform::PedHandle actors[2]{0, 0};
+    platform::PedPresentationTraits actorTraits[2]{};
     std::size_t found = 0;
     for (const auto ped : nearby) {
         if (ped == player || !platform_.world.pedExists(ped)) {
@@ -394,15 +410,21 @@ void Runtime::startInvestigationDialogueDemo() {
         if (!snapshot || !snapshot->alive || snapshot->isPlayer) {
             continue;
         }
-        actors[found++] = ped;
+        const auto traits = pedPresentation_.classify(ped);
+        if (!traits.human || traits.voiceGender == platform::PedVoiceGender::Unknown) {
+            continue;
+        }
+        actors[found] = ped;
+        actorTraits[found] = traits;
+        ++found;
         if (found == 2) {
             break;
         }
     }
 
     if (found < 2) {
-        Logger::instance().warn("Investigation dialogue demo needs two nearby live non-player peds. Move to a populated area and press F7 again.");
-        platform_.ui.subtitle("GCO demo: need two nearby NPCs", 1800, true);
+        Logger::instance().warn("Investigation dialogue demo needs two nearby live human non-player peds. Move to a populated area and press F7 again.");
+        platform_.ui.subtitle("GCO demo: need two nearby human NPCs", 1800, true);
         return;
     }
 
@@ -426,14 +448,42 @@ void Runtime::startInvestigationDialogueDemo() {
     investigationDemoPlan_ = dialogue::InvestigationDialogueComposer::compose(
         facts,
         dialogue::InterviewOptions{4, static_cast<std::uint32_t>(frameCount_), true, true, true});
+
+    // Ambient debug actors have no persistent logical age profile, so age defaults to Adult.
+    // Production clerks/witnesses get ageBand from their logical profile; we never infer age from a GTA model.
+    investigationDemoPlan_.officerProfile = dialogue::SpeakerPresentationProfile{
+        "debug.investigating_officer",
+        dialogueVoiceGender(actorTraits[0].voiceGender),
+        dialogue::AgeBand::Adult,
+        dialogue::SpeechRegister::NeutralProfessional};
+    investigationDemoPlan_.witnessProfile = dialogue::SpeakerPresentationProfile{
+        "debug.clerk",
+        dialogueVoiceGender(actorTraits[1].voiceGender),
+        dialogue::AgeBand::Adult,
+        dialogue::SpeechRegister::GroundedContemporary};
+
     investigationDemoTurnIndex_ = 0;
     investigationDemoOfficer_ = actors[0];
     investigationDemoWitness_ = actors[1];
     investigationDemoNextTurnMs_ = nowMs() + 500;
 
+    const auto officerVoiceSet = dialogue::voiceSetIdFor(
+        dialogue::SpeakerRole::InvestigatingOfficer,
+        investigationDemoPlan_.officerProfile.voiceGender,
+        investigationDemoPlan_.officerProfile.ageBand);
+    const auto clerkVoiceSet = dialogue::voiceSetIdFor(
+        dialogue::SpeakerRole::Clerk,
+        investigationDemoPlan_.witnessProfile.voiceGender,
+        investigationDemoPlan_.witnessProfile.ageBand);
+
     Logger::instance().info(
         "Investigation dialogue demo started with synthetic UNKNOWN-SUSPECT facts. "
-        "Actors are nearby ambient peds used only to exercise conversation/overhearing; no case state is mutated.");
+        "Actors are nearby ambient human peds used only to exercise conversation/overhearing; no case state is mutated. "
+        "Age is not inferred: both debug personas use the adult fallback.");
+    Logger::instance().info(
+        "Investigation demo persona match: officerVoiceSet=" + officerVoiceSet
+        + ", clerkVoiceSet=" + clerkVoiceSet
+        + ". Voice sets are selection metadata only; generated audio/lip-sync assets remain REFERENCE_ONLY.");
     platform_.ui.subtitle("GCO investigation demo started - stay close to overhear", 2200, true);
 }
 
@@ -450,6 +500,9 @@ void Runtime::tickInvestigationDialogueDemo(const std::uint64_t now) {
     const platform::PedHandle speaker = turn.speaker == dialogue::InterviewSpeaker::Officer
         ? investigationDemoOfficer_
         : investigationDemoWitness_;
+    const auto& speakerProfile = turn.speaker == dialogue::InterviewSpeaker::Officer
+        ? investigationDemoPlan_.officerProfile
+        : investigationDemoPlan_.witnessProfile;
 
     if (!platform_.world.pedExists(speaker)) {
         stopInvestigationDialogueDemo("a demo speaker streamed out or was deleted");
@@ -477,6 +530,11 @@ void Runtime::tickInvestigationDialogueDemo(const std::uint64_t now) {
         dialogue::OverhearSample{distance, clearLos},
         dialogue::OverhearPolicy{kInvestigationDemoHearRadius, false});
 
+    const std::string voiceSet = dialogue::voiceSetIdFor(
+        demoRoleFor(turn.speaker),
+        speakerProfile.voiceGender,
+        speakerProfile.ageBand);
+
     std::ostringstream log;
     log << "Investigation demo turn " << (investigationDemoTurnIndex_ + 1)
         << '/' << investigationDemoPlan_.size()
@@ -485,6 +543,9 @@ void Runtime::tickInvestigationDialogueDemo(const std::uint64_t now) {
         << " audible=" << (audible ? "true" : "false")
         << " distance=" << distance
         << " los=" << (clearLos ? "true" : "false")
+        << " voiceGender=" << dialogue::voiceGenderName(speakerProfile.voiceGender)
+        << " ageBand=" << dialogue::ageBandName(speakerProfile.ageBand)
+        << " voiceSet=" << voiceSet
         << " event=" << turn.semanticEvent
         << " text=" << turn.text;
     Logger::instance().info(log.str());
@@ -511,6 +572,8 @@ void Runtime::stopInvestigationDialogueDemo(const char* reason) {
         std::string("Investigation dialogue demo stopped: ")
         + (reason != nullptr ? reason : "unspecified") + ".");
     investigationDemoPlan_.turns.clear();
+    investigationDemoPlan_.officerProfile = {};
+    investigationDemoPlan_.witnessProfile = {};
     investigationDemoTurnIndex_ = 0;
     investigationDemoOfficer_ = 0;
     investigationDemoWitness_ = 0;
