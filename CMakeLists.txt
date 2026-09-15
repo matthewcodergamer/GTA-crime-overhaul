@@ -42,6 +42,9 @@ add_library(GTA_Crime_Overhaul SHARED
     src/Runtime.h
     src/Foundation.cpp
     src/Foundation.h
+    src/platform/PlatformTypes.h
+    src/platform/PlatformAdapters.cpp
+    src/platform/PlatformAdapters.h
 )
 
 target_include_directories(GTA_Crime_Overhaul PRIVATE
@@ -78,6 +81,27 @@ set_target_properties(GTA_Crime_Overhaul PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(GCO_PlatformTypesTests
+        tests/PlatformTypesTests.cpp
+        src/platform/PlatformTypes.cpp
+        src/platform/PlatformTypes.h
+    )
+    target_include_directories(GCO_PlatformTypesTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    if(MSVC)
+        target_compile_options(GCO_PlatformTypesTests PRIVATE
+            /W4
+            /permissive-
+            /EHsc
+            /utf-8
+        )
+    endif()
+    add_test(NAME PlatformTypes COMMAND GCO_PlatformTypesTests)
+endif()
 
 install(TARGETS GTA_Crime_Overhaul
     RUNTIME DESTINATION .
