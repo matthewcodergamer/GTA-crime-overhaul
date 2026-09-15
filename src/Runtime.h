@@ -21,6 +21,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 
 namespace gco {
@@ -31,6 +32,7 @@ public:
     ~Runtime();
 
     void run();
+    void runStage7Integrated();
     void requestStop() noexcept;
 
 private:
@@ -62,7 +64,6 @@ private:
     platform::AdapterDiagnostics adapterDiagnostics_;
     platform::NativePedPresentationAdapter pedPresentation_;
     platform::NativeFacialAnimationAdapter facialAnimation_;
-    platform::NativePoliceInvestigationAdapter policeInvestigationAdapter_;
 
     Scheduler scheduler_;
     EventBus eventBus_;
@@ -77,8 +78,10 @@ private:
     robbery::PrototypeStoreRuntime storeRuntime_;
     identity::ClerkRecognitionDirector clerkRecognitionDirector_;
     witness::WitnessDirector witnessDirector_;
-    investigation::DispatchDirector dispatchDirector_;
-    investigation::InvestigationDirector investigationDirector_;
+
+    std::unique_ptr<platform::NativePoliceInvestigationAdapter> policeInvestigationAdapter_;
+    std::unique_ptr<investigation::DispatchDirector> dispatchDirector_;
+    std::unique_ptr<investigation::InvestigationDirector> investigationDirector_;
 
     std::atomic_bool stopRequested_{false};
     bool initialized_ = false;
