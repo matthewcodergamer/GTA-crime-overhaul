@@ -128,6 +128,7 @@ private:
         std::string name;
         Callback callback;
         std::uint64_t lastRunMs = 0;
+        bool hasRun = false;
     };
 
     struct QueuedTask final {
