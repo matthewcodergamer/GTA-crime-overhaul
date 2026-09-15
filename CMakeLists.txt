@@ -65,6 +65,8 @@ add_library(GTA_Crime_Overhaul SHARED
     src/platform/PlatformTypes.h
     src/platform/PlatformAdapters.cpp
     src/platform/PlatformAdapters.h
+    src/platform/AdapterDiagnostics.cpp
+    src/platform/AdapterDiagnostics.h
 )
 
 target_include_directories(GTA_Crime_Overhaul PRIVATE
