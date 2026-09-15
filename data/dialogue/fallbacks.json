@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 2,
+  "packId": "fallbacks",
+  "speakerGroups": ["ANY"],
+  "fallbackEvent": "fallback.silent",
+  "lines": [
+    {"id":"fallback.silent.01","event":"fallback.silent","speakerArchetypes":["any"],"intensity":0,"weight":1.0,"cooldownSeconds":0,"sessionMax":null,"reuseGroup":"silence","noRepeatGroup":"silence","conditions":{"all":[],"any":[],"none":[]},"tags":["fallback","silent"],"delivery":{"type":"silent","text":null,"ambientSpeech":null,"voiceAsset":null}}
+  ]
+}
