@@ -7,12 +7,12 @@ namespace gco::vehicle {
 GarageVehicleService::GarageVehicleService(
     VehicleIdentitySystem& identity,
     VehiclePersistenceStore& persistence,
-    platform::NativeVehicleIdentityAdapter& nativeAdapter,
+    GarageNativeCallbacks native,
     GaragePaymentCallbacks payment,
     GarageServicePricing pricing)
     : identity_(identity),
       persistence_(persistence),
-      nativeAdapter_(nativeAdapter),
+      native_(std::move(native)),
       payment_(std::move(payment)),
       pricing_(pricing) {}
 
@@ -33,6 +33,9 @@ GarageServiceResult GarageVehicleService::changePlate(
         return {GarageServiceStatus::InvalidPlate, 0,
             !validation.valid ? validation.reason : "plate style outside conservative GTA V range 0-5"};
     }
+    if (!native_.applyPlate) {
+        return {GarageServiceStatus::NativeApplyFailed, 0, "vehicle plate mutation port unavailable"};
+    }
     if (!payment_.balance || !payment_.charge || !payment_.credit) {
         return {GarageServiceStatus::UnsupportedPayment, 0, "payment gateway unavailable"};
     }
@@ -47,12 +50,12 @@ GarageServiceResult GarageVehicleService::changePlate(
 
     const auto oldAppearance = record->appearance;
     const auto oldUpdatedAt = record->updatedAtMs;
-    if (!nativeAdapter_.applyPlate(liveVehicle, validation.normalized, plateStyle)) {
+    if (!native_.applyPlate(liveVehicle, validation.normalized, plateStyle)) {
         payment_.credit(pricing_.plateChangePrice);
         return {GarageServiceStatus::NativeApplyFailed, 0, "GTA plate native rejected/unavailable"};
     }
     if (!identity_.changePlate(vehicleId, validation.normalized, plateStyle, nowMs)) {
-        nativeAdapter_.applyPlate(liveVehicle, oldAppearance.plateText, oldAppearance.plateStyle);
+        native_.applyPlate(liveVehicle, oldAppearance.plateText, oldAppearance.plateStyle);
         payment_.credit(pricing_.plateChangePrice);
         return {GarageServiceStatus::VehicleMissing, 0, "logical vehicle disappeared during plate transaction"};
     }
@@ -64,7 +67,7 @@ GarageServiceResult GarageVehicleService::changePlate(
             record->appearance = oldAppearance;
             record->updatedAtMs = oldUpdatedAt;
         }
-        nativeAdapter_.applyPlate(liveVehicle, oldAppearance.plateText, oldAppearance.plateStyle);
+        native_.applyPlate(liveVehicle, oldAppearance.plateText, oldAppearance.plateStyle);
         payment_.credit(pricing_.plateChangePrice);
         return {GarageServiceStatus::PersistenceFailed, 0, "plate transaction rolled back: " + saveReason};
     }
@@ -85,13 +88,16 @@ GarageServiceResult GarageVehicleService::repaint(
     if (!liveBindingMatches(vehicleId, liveVehicle)) {
         return {GarageServiceStatus::LiveVehicleMismatch, 0, "live GTA handle is not bound to this logical vehicle"};
     }
+    if (!native_.applyPaint) {
+        return {GarageServiceStatus::NativeApplyFailed, 0, "vehicle paint mutation port unavailable"};
+    }
     const auto oldAppearance = record->appearance;
     const auto oldUpdatedAt = record->updatedAtMs;
-    if (!nativeAdapter_.applyPaint(liveVehicle, primaryColor, secondaryColor)) {
+    if (!native_.applyPaint(liveVehicle, primaryColor, secondaryColor)) {
         return {GarageServiceStatus::NativeApplyFailed, 0, "GTA paint native rejected/unavailable"};
     }
     if (!identity_.repaint(vehicleId, primaryColor, secondaryColor, nowMs)) {
-        nativeAdapter_.applyPaint(liveVehicle, oldAppearance.primaryColor, oldAppearance.secondaryColor);
+        native_.applyPaint(liveVehicle, oldAppearance.primaryColor, oldAppearance.secondaryColor);
         return {GarageServiceStatus::VehicleMissing, 0, "logical vehicle disappeared during paint transaction"};
     }
 
@@ -102,7 +108,7 @@ GarageServiceResult GarageVehicleService::repaint(
             record->appearance = oldAppearance;
             record->updatedAtMs = oldUpdatedAt;
         }
-        nativeAdapter_.applyPaint(liveVehicle, oldAppearance.primaryColor, oldAppearance.secondaryColor);
+        native_.applyPaint(liveVehicle, oldAppearance.primaryColor, oldAppearance.secondaryColor);
         return {GarageServiceStatus::PersistenceFailed, 0, "paint transaction rolled back: " + saveReason};
     }
     return {GarageServiceStatus::Success, 0,
