@@ -2,7 +2,6 @@
 
 #include "VehicleIdentitySystem.h"
 #include "VehiclePersistence.h"
-#include "platform/VehicleIdentityAdapter.h"
 
 #include <cstdint>
 #include <functional>
@@ -19,6 +18,11 @@ struct GaragePaymentCallbacks final {
     std::function<std::optional<int>()> balance;
     std::function<bool(int)> charge;
     std::function<bool(int)> credit;
+};
+
+struct GarageNativeCallbacks final {
+    std::function<bool(platform::VehicleHandle, std::string_view, int)> applyPlate;
+    std::function<bool(platform::VehicleHandle, int, int)> applyPaint;
 };
 
 enum class GarageServiceStatus : std::uint8_t {
@@ -45,7 +49,7 @@ public:
     GarageVehicleService(
         VehicleIdentitySystem& identity,
         VehiclePersistenceStore& persistence,
-        platform::NativeVehicleIdentityAdapter& nativeAdapter,
+        GarageNativeCallbacks native,
         GaragePaymentCallbacks payment,
         GarageServicePricing pricing = {});
 
@@ -68,7 +72,7 @@ private:
 
     VehicleIdentitySystem& identity_;
     VehiclePersistenceStore& persistence_;
-    platform::NativeVehicleIdentityAdapter& nativeAdapter_;
+    GarageNativeCallbacks native_;
     GaragePaymentCallbacks payment_;
     GarageServicePricing pricing_;
 };
