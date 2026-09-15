@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
 #include <string>
 #include <utility>
 
@@ -19,10 +18,6 @@ constexpr float kPi = 3.14159265358979323846f;
 
 Vec3 fromNative(const Vector3& value) noexcept {
     return {value.x, value.y, value.z};
-}
-
-char* writable(std::string& value) noexcept {
-    return value.empty() ? const_cast<char*>("") : value.data();
 }
 
 template <typename HandleT, typename PoolFn, typename ExistsFn>
@@ -38,7 +33,10 @@ std::vector<HandleT> collectNearby(
     }
 
     std::array<int, kWorldPoolCapacity> handles{};
-    const int count = std::clamp(pool(handles.data(), static_cast<int>(handles.size())), 0, static_cast<int>(handles.size()));
+    const int count = std::clamp(
+        pool(handles.data(), static_cast<int>(handles.size())),
+        0,
+        static_cast<int>(handles.size()));
 
     std::vector<std::pair<float, HandleT>> candidates;
     candidates.reserve(std::min<std::size_t>(static_cast<std::size_t>(count), maxResults * 2U));
@@ -50,8 +48,7 @@ std::vector<HandleT> collectNearby(
             continue;
         }
 
-        const Vector3 nativePos = ENTITY::GET_ENTITY_COORDS(handle, TRUE);
-        const Vec3 position = fromNative(nativePos);
+        const Vec3 position = fromNative(ENTITY::GET_ENTITY_COORDS(handle, TRUE));
         const float distanceSq = distanceSquared(center, position);
         if (distanceSq <= radiusSq) {
             candidates.emplace_back(distanceSq, handle);
@@ -67,47 +64,36 @@ std::vector<HandleT> collectNearby(
             [](const auto& left, const auto& right) { return left.first < right.first; });
         candidates.resize(keep);
     } else {
-        std::sort(candidates.begin(), candidates.end(),
+        std::sort(
+            candidates.begin(),
+            candidates.end(),
             [](const auto& left, const auto& right) { return left.first < right.first; });
     }
 
     std::vector<HandleT> result;
     result.reserve(candidates.size());
-    for (const auto& [_, handle] : candidates) {
+    for (const auto& [distanceSq, handle] : candidates) {
+        (void)distanceSq;
         result.push_back(handle);
     }
     return result;
 }
 
 ControlBinding bindingFor(const InputAction action) noexcept {
-    // GTA control IDs are used so keyboard/controller bindings follow the player's GTA settings.
-    // INPUT_CONTEXT=51, INPUT_FRONTEND_CANCEL=177, INPUT_SPRINT=21,
-    // INPUT_AIM=25, INPUT_ATTACK=24, INPUT_VEH_ENTER=23.
+    // Current GTA control IDs. Using PAD means keyboard/controller remapping remains GTA-owned.
     switch (action) {
-    case InputAction::Interact: return {0, 51};
-    case InputAction::Cancel: return {0, 177};
-    case InputAction::Sprint: return {0, 21};
-    case InputAction::Aim: return {0, 25};
-    case InputAction::Attack: return {0, 24};
-    case InputAction::EnterVehicle: return {0, 23};
+    case InputAction::Interact: return {0, 51};       // INPUT_CONTEXT
+    case InputAction::Cancel: return {0, 177};       // INPUT_FRONTEND_CANCEL
+    case InputAction::Sprint: return {0, 21};        // INPUT_SPRINT
+    case InputAction::Aim: return {0, 25};           // INPUT_AIM
+    case InputAction::Attack: return {0, 24};        // INPUT_ATTACK
+    case InputAction::EnterVehicle: return {0, 23};  // INPUT_VEH_ENTER
     case InputAction::Count: break;
     }
     return {0, 0};
 }
 
 } // namespace
-
-GridCell gridCellFor(const Vec3& position, const float cellSize) noexcept {
-    if (!(cellSize > 0.0f) || !std::isfinite(cellSize)) {
-        return {};
-    }
-
-    return {
-        static_cast<int>(std::floor(position.x / cellSize)),
-        static_cast<int>(std::floor(position.y / cellSize)),
-        static_cast<int>(std::floor(position.z / cellSize))
-    };
-}
 
 PedHandle NativeWorldAdapter::playerPed() const {
     return PLAYER::PLAYER_PED_ID();
@@ -147,7 +133,7 @@ int NativeWorldAdapter::wantedLevel() const {
 
 MissionState NativeWorldAdapter::missionState() const {
     MissionState state{};
-    state.missionFlag = GAMEPLAY::GET_MISSION_FLAG() != FALSE;
+    state.missionFlag = MISC::GET_MISSION_FLAG() != FALSE;
     state.cutsceneActive = CUTSCENE::IS_CUTSCENE_ACTIVE() != FALSE;
     state.cutscenePlaying = CUTSCENE::IS_CUTSCENE_PLAYING() != FALSE;
     state.playerControlOn = PLAYER::IS_PLAYER_CONTROL_ON(PLAYER::PLAYER_ID()) != FALSE;
@@ -213,7 +199,7 @@ std::optional<PedSnapshot> NativeWorldAdapter::snapshotPed(const PedHandle ped) 
 
     for (int prop = 0; prop < static_cast<int>(snapshot.props.size()); ++prop) {
         auto& variation = snapshot.props[static_cast<std::size_t>(prop)];
-        variation.drawable = PED::GET_PED_PROP_INDEX(ped, prop);
+        variation.drawable = PED::GET_PED_PROP_INDEX(ped, prop, 0);
         variation.texture = PED::GET_PED_PROP_TEXTURE_INDEX(ped, prop);
     }
 
@@ -234,12 +220,15 @@ std::optional<VehicleSnapshot> NativeWorldAdapter::snapshotVehicle(
     snapshot.heading = ENTITY::GET_ENTITY_HEADING(vehicle);
     VEHICLE::GET_VEHICLE_COLOURS(vehicle, &snapshot.primaryColor, &snapshot.secondaryColor);
 
-    if (char* plate = VEHICLE::GET_VEHICLE_NUMBER_PLATE_TEXT(vehicle); plate != nullptr) {
+    if (const char* plate = VEHICLE::GET_VEHICLE_NUMBER_PLATE_TEXT(vehicle); plate != nullptr) {
         snapshot.plate = plate;
         const auto first = snapshot.plate.find_first_not_of(' ');
         const auto last = snapshot.plate.find_last_not_of(' ');
-        snapshot.plate = first == std::string::npos ? std::string{} : snapshot.plate.substr(first, last - first + 1);
+        snapshot.plate = first == std::string::npos
+            ? std::string{}
+            : snapshot.plate.substr(first, last - first + 1);
     }
+
     snapshot.plateStyle = VEHICLE::GET_VEHICLE_NUMBER_PLATE_TEXT_INDEX(vehicle);
     snapshot.projectVehicleId = projectVehicleId;
     return snapshot;
@@ -253,29 +242,29 @@ bool NativeAnimationAdapter::requestDictionary(
         return false;
     }
 
-    std::string name(dictionary);
-    if (STREAMING::DOES_ANIM_DICT_EXIST(writable(name)) == FALSE) {
+    const std::string name(dictionary);
+    if (STREAMING::DOES_ANIM_DICT_EXIST(name.c_str()) == FALSE) {
         return false;
     }
 
-    STREAMING::REQUEST_ANIM_DICT(writable(name));
+    STREAMING::REQUEST_ANIM_DICT(name.c_str());
     const ULONGLONG startedAt = GetTickCount64();
     do {
-        if (STREAMING::HAS_ANIM_DICT_LOADED(writable(name)) != FALSE) {
+        if (STREAMING::HAS_ANIM_DICT_LOADED(name.c_str()) != FALSE) {
             return true;
         }
         scriptWait(0);
     } while (GetTickCount64() - startedAt < timeoutMs);
 
-    return STREAMING::HAS_ANIM_DICT_LOADED(writable(name)) != FALSE;
+    return STREAMING::HAS_ANIM_DICT_LOADED(name.c_str()) != FALSE;
 }
 
 void NativeAnimationAdapter::releaseDictionary(const std::string_view dictionary) {
     if (dictionary.empty()) {
         return;
     }
-    std::string name(dictionary);
-    STREAMING::REMOVE_ANIM_DICT(writable(name));
+    const std::string name(dictionary);
+    STREAMING::REMOVE_ANIM_DICT(name.c_str());
 }
 
 bool NativeAnimationAdapter::stopAnimation(
@@ -284,12 +273,17 @@ bool NativeAnimationAdapter::stopAnimation(
     const std::string_view clip,
     const float blendOut) {
 
-    if (ped == 0 || ENTITY::DOES_ENTITY_EXIST(ped) == FALSE || dictionary.empty() || clip.empty()) {
+    if (ped == 0
+        || ENTITY::DOES_ENTITY_EXIST(ped) == FALSE
+        || ENTITY::IS_ENTITY_A_PED(ped) == FALSE
+        || dictionary.empty()
+        || clip.empty()) {
         return false;
     }
-    std::string dictionaryValue(dictionary);
-    std::string clipValue(clip);
-    AI::STOP_ANIM_TASK(ped, writable(dictionaryValue), writable(clipValue), blendOut);
+
+    const std::string dictionaryValue(dictionary);
+    const std::string clipValue(clip);
+    TASK::STOP_ANIM_TASK(ped, dictionaryValue.c_str(), clipValue.c_str(), blendOut);
     return true;
 }
 
@@ -299,10 +293,10 @@ bool NativeAnimationAdapter::cancelPedTasks(const PedHandle ped, const bool imme
     }
 
     if (immediate) {
-        AI::CLEAR_PED_TASKS_IMMEDIATELY(ped);
+        TASK::CLEAR_PED_TASKS_IMMEDIATELY(ped);
     } else {
-        AI::CLEAR_PED_TASKS(ped);
-        AI::CLEAR_PED_SECONDARY_TASK(ped);
+        TASK::CLEAR_PED_TASKS(ped);
+        TASK::CLEAR_PED_SECONDARY_TASK(ped);
     }
     return true;
 }
@@ -337,7 +331,8 @@ bool NativePropAttachmentAdapter::attach(
         collision ? TRUE : FALSE,
         FALSE,
         2,
-        fixedRotation ? TRUE : FALSE);
+        fixedRotation ? TRUE : FALSE,
+        0);
     return ENTITY::IS_ENTITY_ATTACHED_TO_ENTITY(object, parent) != FALSE;
 }
 
@@ -357,6 +352,7 @@ void NativePropAttachmentAdapter::deleteOwned(ObjectHandle& object) {
     if (object == 0) {
         return;
     }
+
     if (ENTITY::DOES_ENTITY_EXIST(object) != FALSE) {
         if (ENTITY::IS_ENTITY_ATTACHED(object) != FALSE) {
             ENTITY::DETACH_ENTITY(object, TRUE, TRUE);
@@ -387,7 +383,8 @@ void NativeInteriorDoorAdapter::refreshInterior(const InteriorId interior) {
 }
 
 bool NativeInteriorDoorAdapter::doorExists(const std::uint32_t doorSystemHash) const {
-    return doorSystemHash != 0 && OBJECT::_DOES_DOOR_EXIST(static_cast<Hash>(doorSystemHash)) != FALSE;
+    return doorSystemHash != 0
+        && OBJECT::IS_DOOR_REGISTERED_WITH_SYSTEM(static_cast<Hash>(doorSystemHash)) != FALSE;
 }
 
 bool NativeInteriorDoorAdapter::addDoorToSystem(
@@ -398,6 +395,7 @@ bool NativeInteriorDoorAdapter::addDoorToSystem(
     if (doorSystemHash == 0 || modelHash == 0) {
         return false;
     }
+
     OBJECT::ADD_DOOR_TO_SYSTEM(
         static_cast<Hash>(doorSystemHash),
         static_cast<Hash>(modelHash),
@@ -406,13 +404,14 @@ bool NativeInteriorDoorAdapter::addDoorToSystem(
         position.z,
         FALSE,
         FALSE,
-        FALSE);
+        TRUE,
+        0);
     return doorExists(doorSystemHash);
 }
 
 void NativeInteriorDoorAdapter::removeDoorFromSystem(const std::uint32_t doorSystemHash) {
     if (doorExists(doorSystemHash)) {
-        OBJECT::REMOVE_DOOR_FROM_SYSTEM(static_cast<Hash>(doorSystemHash));
+        OBJECT::REMOVE_DOOR_FROM_SYSTEM(static_cast<Hash>(doorSystemHash), 0);
     }
 }
 
@@ -436,14 +435,15 @@ void NativeInteriorDoorAdapter::setClosestDoorLocked(
 }
 
 BlipHandle NativeUiAdapter::addBlip(const Vec3& position, const BlipStyle& style) {
-    const Blip blip = UI::ADD_BLIP_FOR_COORD(position.x, position.y, position.z);
+    const Blip blip = HUD::ADD_BLIP_FOR_COORD(position.x, position.y, position.z);
     if (blip == 0) {
         return 0;
     }
-    UI::SET_BLIP_SPRITE(blip, style.sprite);
-    UI::SET_BLIP_COLOUR(blip, style.color);
-    UI::SET_BLIP_SCALE(blip, style.scale);
-    UI::SET_BLIP_AS_SHORT_RANGE(blip, style.shortRange ? TRUE : FALSE);
+
+    HUD::SET_BLIP_SPRITE(blip, style.sprite);
+    HUD::SET_BLIP_COLOUR(blip, style.color);
+    HUD::SET_BLIP_SCALE(blip, style.scale);
+    HUD::SET_BLIP_AS_SHORT_RANGE(blip, style.shortRange ? TRUE : FALSE);
     return blip;
 }
 
@@ -451,44 +451,49 @@ void NativeUiAdapter::removeBlip(BlipHandle& blip) {
     if (blip == 0) {
         return;
     }
+
     Blip nativeBlip = blip;
-    if (UI::DOES_BLIP_EXIST(nativeBlip) != FALSE) {
-        UI::REMOVE_BLIP(&nativeBlip);
+    if (HUD::DOES_BLIP_EXIST(nativeBlip) != FALSE) {
+        HUD::REMOVE_BLIP(&nativeBlip);
     }
     blip = 0;
 }
 
 void NativeUiAdapter::setBlipName(const BlipHandle blip, const std::string_view text) {
-    if (blip == 0 || UI::DOES_BLIP_EXIST(blip) == FALSE) {
+    if (blip == 0 || HUD::DOES_BLIP_EXIST(blip) == FALSE) {
         return;
     }
-    std::string command("STRING");
-    std::string value(text);
-    UI::BEGIN_TEXT_COMMAND_SET_BLIP_NAME(writable(command));
-    UI::_ADD_TEXT_COMPONENT_STRING(writable(value));
-    UI::END_TEXT_COMMAND_SET_BLIP_NAME(blip);
+
+    const std::string value(text);
+    HUD::BEGIN_TEXT_COMMAND_SET_BLIP_NAME("STRING");
+    HUD::ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME(value.c_str());
+    HUD::END_TEXT_COMMAND_SET_BLIP_NAME(blip);
 }
 
-void NativeUiAdapter::subtitle(const std::string_view text, const int durationMs, const bool drawImmediately) {
+void NativeUiAdapter::subtitle(
+    const std::string_view text,
+    const int durationMs,
+    const bool drawImmediately) {
+
     if (text.empty() || durationMs <= 0) {
         return;
     }
-    std::string command("STRING");
-    std::string value(text);
-    UI::_SET_TEXT_ENTRY_2(writable(command));
-    UI::_ADD_TEXT_COMPONENT_STRING(writable(value));
-    UI::_DRAW_SUBTITLE_TIMED(durationMs, drawImmediately ? TRUE : FALSE);
+
+    const std::string value(text);
+    HUD::BEGIN_TEXT_COMMAND_PRINT("STRING");
+    HUD::ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME(value.c_str());
+    HUD::END_TEXT_COMMAND_PRINT(durationMs, drawImmediately ? TRUE : FALSE);
 }
 
 void NativeUiAdapter::helpText(const std::string_view text, const bool beep) {
     if (text.empty()) {
         return;
     }
-    std::string command("STRING");
-    std::string value(text);
-    UI::_SET_TEXT_COMPONENT_FORMAT(writable(command));
-    UI::_ADD_TEXT_COMPONENT_STRING(writable(value));
-    UI::_DISPLAY_HELP_TEXT_FROM_STRING_LABEL(0, FALSE, beep ? TRUE : FALSE, -1);
+
+    const std::string value(text);
+    HUD::BEGIN_TEXT_COMMAND_DISPLAY_HELP("STRING");
+    HUD::ADD_TEXT_COMPONENT_SUBSTRING_PLAYER_NAME(value.c_str());
+    HUD::END_TEXT_COMMAND_DISPLAY_HELP(0, TRUE, beep ? TRUE : FALSE, -1);
 }
 
 bool NativeAudioAdapter::playAmbientSpeech(
@@ -496,12 +501,21 @@ bool NativeAudioAdapter::playAmbientSpeech(
     const std::string_view speechName,
     const std::string_view speechParam) {
 
-    if (ped == 0 || ENTITY::DOES_ENTITY_EXIST(ped) == FALSE || speechName.empty() || speechParam.empty()) {
+    if (ped == 0
+        || ENTITY::DOES_ENTITY_EXIST(ped) == FALSE
+        || ENTITY::IS_ENTITY_A_PED(ped) == FALSE
+        || speechName.empty()
+        || speechParam.empty()) {
         return false;
     }
-    std::string speech(speechName);
-    std::string parameter(speechParam);
-    AUDIO::_PLAY_AMBIENT_SPEECH1(ped, writable(speech), writable(parameter));
+
+    const std::string speech(speechName);
+    const std::string parameter(speechParam);
+    if (AUDIO::DOES_CONTEXT_EXIST_FOR_THIS_PED(ped, speech.c_str(), FALSE) == FALSE) {
+        return false;
+    }
+
+    AUDIO::PLAY_PED_AMBIENT_SPEECH_NATIVE(ped, speech.c_str(), parameter.c_str(), 0);
     return true;
 }
 
@@ -517,36 +531,50 @@ ControlBinding NativeInputAdapter::binding(const InputAction action) const {
 
 bool NativeInputAdapter::pressed(const InputAction action) const {
     const auto bind = binding(action);
-    return CONTROLS::IS_CONTROL_PRESSED(bind.inputGroup, bind.control) != FALSE;
+    return PAD::IS_CONTROL_PRESSED(bind.inputGroup, bind.control) != FALSE;
 }
 
 bool NativeInputAdapter::justPressed(const InputAction action) const {
     const auto bind = binding(action);
-    return CONTROLS::IS_CONTROL_JUST_PRESSED(bind.inputGroup, bind.control) != FALSE;
+    return PAD::IS_CONTROL_JUST_PRESSED(bind.inputGroup, bind.control) != FALSE;
 }
 
 bool NativeInputAdapter::justReleased(const InputAction action) const {
     const auto bind = binding(action);
-    return CONTROLS::IS_CONTROL_JUST_RELEASED(bind.inputGroup, bind.control) != FALSE;
+    return PAD::IS_CONTROL_JUST_RELEASED(bind.inputGroup, bind.control) != FALSE;
 }
 
 float NativeInputAdapter::normal(const InputAction action) const {
     const auto bind = binding(action);
-    return CONTROLS::GET_CONTROL_NORMAL(bind.inputGroup, bind.control);
+    return PAD::GET_CONTROL_NORMAL(bind.inputGroup, bind.control);
 }
 
 void NativeDebugDrawAdapter::line(const Vec3& from, const Vec3& to, const Rgba& color) {
     GRAPHICS::DRAW_LINE(
-        from.x, from.y, from.z,
-        to.x, to.y, to.z,
-        color.r, color.g, color.b, color.a);
+        from.x,
+        from.y,
+        from.z,
+        to.x,
+        to.y,
+        to.z,
+        color.r,
+        color.g,
+        color.b,
+        color.a);
 }
 
 void NativeDebugDrawAdapter::box(const Vec3& min, const Vec3& max, const Rgba& color) {
     GRAPHICS::DRAW_BOX(
-        min.x, min.y, min.z,
-        max.x, max.y, max.z,
-        color.r, color.g, color.b, color.a);
+        min.x,
+        min.y,
+        min.z,
+        max.x,
+        max.y,
+        max.z,
+        color.r,
+        color.g,
+        color.b,
+        color.a);
 }
 
 void NativeDebugDrawAdapter::witnessCone(
