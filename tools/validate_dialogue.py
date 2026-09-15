@@ -58,7 +58,22 @@ def build_test_context(lines: list[dict[str, Any]]) -> set[str]:
     return context
 
 
-def weighted_choice(rng: random.Random, candidates: list[dict[str, Any]], usage: Counter[str], last_reuse: str | None) -> dict[str, Any]:
+def remove_immediate_repeat(
+    candidates: list[dict[str, Any]],
+    last_line_id: str | None,
+) -> list[dict[str, Any]]:
+    if last_line_id is None or len(candidates) <= 1:
+        return candidates
+    alternatives = [line for line in candidates if line["id"] != last_line_id]
+    return alternatives or candidates
+
+
+def weighted_choice(
+    rng: random.Random,
+    candidates: list[dict[str, Any]],
+    usage: Counter[str],
+    last_reuse: str | None,
+) -> dict[str, Any]:
     weights: list[float] = []
     for line in candidates:
         weight = float(line["weight"])
@@ -203,6 +218,7 @@ def validate(root: Path, simulations: int, seed: int) -> int:
         fallback_count = 0
         starved = 0
         last_reuse: str | None = None
+        last_line_id: str | None = None
         game_time = 0
 
         for _encounter in range(simulations):
@@ -212,14 +228,17 @@ def validate(root: Path, simulations: int, seed: int) -> int:
                 if line_matches(line, context)
                 and game_time - last_used.get(line["id"], -10**9) >= line["cooldownSeconds"]
             ]
+            candidates = remove_immediate_repeat(candidates, last_line_id)
 
             if not candidates:
                 fallback_id = event_row["fallbackEvent"]
                 candidates = [line for line in lines_by_event[fallback_id] if line_matches(line, context)]
+                candidates = remove_immediate_repeat(candidates, last_line_id)
                 fallback_count += 1
 
             if not candidates:
                 candidates = list(lines_by_event.get("fallback.silent", []))
+                candidates = remove_immediate_repeat(candidates, last_line_id)
 
             if not candidates:
                 starved += 1
@@ -231,6 +250,7 @@ def validate(root: Path, simulations: int, seed: int) -> int:
             usage[line_id] += 1
             last_used[line_id] = game_time
             last_reuse = selected["reuseGroup"]
+            last_line_id = line_id
 
         max_streak = 0
         current = 0
@@ -243,7 +263,8 @@ def validate(root: Path, simulations: int, seed: int) -> int:
                 previous = line_id
             max_streak = max(max_streak, current)
 
-        direct_used = sum(1 for line_id in usage if line_id.startswith(event_id + ".") or lines_by_event[event_id] and any(line["id"] == line_id for line in direct))
+        direct_ids = {line["id"] for line in direct}
+        direct_used = len(direct_ids.intersection(usage.keys()))
         fallback_rate = fallback_count / simulations if simulations else 0.0
         if starved:
             simulation_errors.append(f"{event_id}: {starved} selections starved")

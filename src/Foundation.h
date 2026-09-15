@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CoreServices.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -56,6 +58,7 @@ struct RuntimeConfig {
     bool enabled = true;
     bool debugLogging = true;
     bool debugOverlay = false;
+    bool debugHotkeys = true;
     bool witnessSystem = true;
     bool persistentCases = true;
     bool vehicleIdentity = true;
@@ -64,16 +67,40 @@ struct RuntimeConfig {
     static RuntimeConfig load(const std::filesystem::path& file);
 };
 
+enum class PersistenceStatus : std::uint8_t {
+    LoadedPrimary,
+    RecoveredBackup,
+    CreatedNew,
+    Failed
+};
+
+struct PersistenceReport final {
+    PersistenceStatus status = PersistenceStatus::Failed;
+    std::uint32_t schemaVersion = 0;
+    std::string detail;
+
+    [[nodiscard]] bool ok() const noexcept { return status != PersistenceStatus::Failed; }
+};
+
 class WorldStateStore final {
 public:
-    static constexpr std::uint32_t SchemaVersion = 1;
+    static constexpr std::uint32_t SchemaVersion = BuildInfo::SaveSchemaVersion;
 
     explicit WorldStateStore(RuntimePaths paths);
 
+    PersistenceReport loadOrCreate();
     bool ensureInitialized();
     bool writeEmptyWorldAtomically();
+    bool writeWorldAtomically(const std::string& document);
+    bool validateFile(const std::filesystem::path& file, std::string* reason = nullptr) const;
+    bool loadLogicalIdState(LogicalIdGenerator& generator, std::string* reason = nullptr) const;
+    [[nodiscard]] std::string emptyWorldJson() const;
 
 private:
+    bool validateDocument(const std::string& document, std::string* reason) const;
+    bool restoreBackup(std::string* reason);
+    void quarantineCorruptPrimary();
+
     RuntimePaths paths_;
 };
 

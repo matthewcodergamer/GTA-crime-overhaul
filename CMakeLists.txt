@@ -14,6 +14,22 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Supported build configurations" FORCE)
+endif()
+
+find_package(Git QUIET)
+set(GCO_GIT_SHA "unknown")
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE GCO_GIT_SHA
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+
 set(SCRIPTHOOKV_SDK_DIR "" CACHE PATH "Path to the official ScriptHookV SDK root containing inc/ and lib/")
 
 if(NOT SCRIPTHOOKV_SDK_DIR AND DEFINED ENV{SCRIPTHOOKV_SDK_DIR})
@@ -40,8 +56,11 @@ add_library(GTA_Crime_Overhaul SHARED
     src/main.cpp
     src/Runtime.cpp
     src/Runtime.h
+    src/CoreServices.cpp
+    src/CoreServices.h
     src/Foundation.cpp
     src/Foundation.h
+    src/IdStatePersistence.cpp
     src/platform/PlatformTypes.cpp
     src/platform/PlatformTypes.h
     src/platform/PlatformAdapters.cpp
@@ -63,6 +82,8 @@ target_compile_definitions(GTA_Crime_Overhaul PRIVATE
     UNICODE
     _UNICODE
     GCO_VERSION="${PROJECT_VERSION}"
+    GCO_BUILD_CONFIG="$<CONFIG>"
+    GCO_GIT_SHA="${GCO_GIT_SHA}"
 )
 
 if(MSVC)
@@ -93,15 +114,56 @@ if(BUILD_TESTING)
     target_include_directories(GCO_PlatformTypesTests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
-    if(MSVC)
-        target_compile_options(GCO_PlatformTypesTests PRIVATE
-            /W4
-            /permissive-
-            /EHsc
-            /utf-8
-        )
-    endif()
+
+    add_executable(GCO_CoreServicesTests
+        tests/CoreServicesTests.cpp
+        src/CoreServices.cpp
+        src/CoreServices.h
+    )
+    target_include_directories(GCO_CoreServicesTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_compile_definitions(GCO_CoreServicesTests PRIVATE
+        GCO_VERSION="${PROJECT_VERSION}"
+        GCO_BUILD_CONFIG="$<CONFIG>"
+        GCO_GIT_SHA="${GCO_GIT_SHA}"
+    )
+
+    add_executable(GCO_PersistenceTests
+        tests/PersistenceTests.cpp
+        src/Foundation.cpp
+        src/Foundation.h
+        src/IdStatePersistence.cpp
+        src/CoreServices.cpp
+        src/CoreServices.h
+    )
+    target_include_directories(GCO_PersistenceTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_compile_definitions(GCO_PersistenceTests PRIVATE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+        UNICODE
+        _UNICODE
+        GCO_VERSION="${PROJECT_VERSION}"
+        GCO_BUILD_CONFIG="$<CONFIG>"
+        GCO_GIT_SHA="${GCO_GIT_SHA}"
+    )
+
+    foreach(test_target IN ITEMS GCO_PlatformTypesTests GCO_CoreServicesTests GCO_PersistenceTests)
+        if(MSVC)
+            target_compile_options(${test_target} PRIVATE
+                /W4
+                /permissive-
+                /EHsc
+                /utf-8
+            )
+        endif()
+    endforeach()
+
     add_test(NAME PlatformTypes COMMAND GCO_PlatformTypesTests)
+    add_test(NAME CoreServices COMMAND GCO_CoreServicesTests)
+    add_test(NAME Persistence COMMAND GCO_PersistenceTests)
 endif()
 
 install(TARGETS GTA_Crime_Overhaul

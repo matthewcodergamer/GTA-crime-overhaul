@@ -4,6 +4,7 @@
 #include <main.h>
 
 #include <exception>
+#include <filesystem>
 #include <sstream>
 #include <string>
 
@@ -16,6 +17,29 @@ constexpr std::size_t kDebugVehicleLimit = 64;
 
 std::uint64_t nowMs() {
     return static_cast<std::uint64_t>(GetTickCount64());
+}
+
+std::string persistenceStatusName(const PersistenceStatus status) {
+    switch (status) {
+    case PersistenceStatus::LoadedPrimary: return "LoadedPrimary";
+    case PersistenceStatus::RecoveredBackup: return "RecoveredBackup";
+    case PersistenceStatus::CreatedNew: return "CreatedNew";
+    case PersistenceStatus::Failed: return "Failed";
+    }
+    return "Unknown";
+}
+
+std::string compatibilityLevelName(const MissionCompatibilityLevel level) {
+    switch (level) {
+    case MissionCompatibilityLevel::Normal: return "Normal";
+    case MissionCompatibilityLevel::Restricted: return "Restricted";
+    case MissionCompatibilityLevel::Suspended: return "Suspended";
+    }
+    return "Unknown";
+}
+
+bool keyDown(const int virtualKey) {
+    return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 }
 
 } // namespace
@@ -41,41 +65,90 @@ bool Runtime::initialize() {
     }
 
     Logger::instance().info("GTA Crime Overhaul starting.");
-#ifdef GCO_VERSION
-    Logger::instance().info(std::string("Build version: ") + GCO_VERSION);
-#endif
+    Logger::instance().info(
+        std::string("Build: version=") + std::string(BuildInfo::Version)
+        + ", config=" + std::string(BuildInfo::BuildConfig)
+        + ", git=" + std::string(BuildInfo::GitSha)
+        + ", saveSchema=" + std::to_string(BuildInfo::SaveSchemaVersion));
+    Logger::instance().info("Runtime scope: GTA V Story Mode/offline only.");
 
     config_ = RuntimeConfig::load(paths_.configFile);
+    if (!std::filesystem::exists(paths_.configFile)) {
+        Logger::instance().warn("Configuration file not found; using compiled safe defaults.");
+    }
 
-    if (!worldState_.ensureInitialized()) {
-        Logger::instance().error("Unable to initialize world save state.");
+    const PersistenceReport persistence = worldState_.loadOrCreate();
+    if (!persistence.ok()) {
+        Logger::instance().error("Unable to initialize world save state: " + persistence.detail);
+        return false;
+    }
+    Logger::instance().info(
+        "Persistence: " + persistenceStatusName(persistence.status)
+        + "; schema=" + std::to_string(persistence.schemaVersion)
+        + "; " + persistence.detail);
+
+    std::string idStateReason;
+    if (!worldState_.loadLogicalIdState(idGenerator_, &idStateReason)) {
+        Logger::instance().error("Unable to restore logical ID state: " + idStateReason);
         return false;
     }
 
     if (!config_.enabled) {
-        Logger::instance().warn("Mod is disabled in configuration; runtime will remain idle.");
+        Logger::instance().warn("Mod is disabled in configuration; runtime will remain idle except for lifecycle cleanup.");
     }
 
-    const auto now = nowMs();
-    lastFiveHzMs_ = now;
-    lastTwoHzMs_ = now;
-    lastOneHzMs_ = now;
-    lastHeartbeatMs_ = now;
-    initialized_ = true;
+    configureScheduler();
+    configureDebugCommands();
 
+    lastHeartbeatMs_ = nowMs();
+    initialized_ = true;
+    stopRequested_.store(false, std::memory_order_release);
+
+    eventBus_.publish(RuntimeEvent{"runtime.started", 0, std::string(BuildInfo::Version)});
     Logger::instance().info("Native ASI runtime initialized successfully.");
+    Logger::instance().info("Debug hotkeys: F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
     return true;
+}
+
+void Runtime::configureScheduler() {
+    scheduler_.setErrorHandler([](const std::string_view taskName, const std::exception_ptr error) {
+        try {
+            if (error) {
+                std::rethrow_exception(error);
+            }
+        } catch (const std::exception& ex) {
+            Logger::instance().error(
+                "Scheduler task '" + std::string(taskName) + "' threw std::exception: " + ex.what());
+        } catch (...) {
+            Logger::instance().error(
+                "Scheduler task '" + std::string(taskName) + "' threw an unknown exception.");
+        }
+    });
+
+    scheduler_.addRecurring(SchedulerLane::Frame, "runtime.frame", [this]() { tickFrame(); });
+    scheduler_.addRecurring(SchedulerLane::FiveHz, "runtime.5hz", [this]() { tickFiveHz(); });
+    scheduler_.addRecurring(SchedulerLane::TwoHz, "runtime.2hz", [this]() { tickTwoHz(); });
+    scheduler_.addRecurring(SchedulerLane::OneHz, "runtime.1hz", [this]() { tickOneHz(); });
+}
+
+void Runtime::configureDebugCommands() {
+    debugCommands_.registerCommand("toggle_overlay", [this]() {
+        config_.debugOverlay = !config_.debugOverlay;
+        Logger::instance().info(std::string("Debug overlay ") + (config_.debugOverlay ? "enabled" : "disabled") + ".");
+    });
+    debugCommands_.registerCommand("dump_status", [this]() { logDiagnostics(); });
+    debugCommands_.registerCommand("validate_save", [this]() { validateSaveDiagnostic(); });
 }
 
 void Runtime::run() {
     try {
         if (!initialize()) {
-            for (;;) {
-                scriptWait(1000);
-            }
+            Logger::instance().error("Runtime initialization failed; ScriptMain is exiting without entering the tick loop.");
+            Logger::instance().close();
+            return;
         }
 
-        for (;;) {
+        while (!stopRequested_.load(std::memory_order_acquire)) {
             if (config_.enabled) {
                 tick();
             }
@@ -83,63 +156,56 @@ void Runtime::run() {
         }
     } catch (const std::exception& ex) {
         Logger::instance().error(std::string("Unhandled std::exception in ScriptMain: ") + ex.what());
-        for (;;) {
-            scriptWait(1000);
-        }
     } catch (...) {
         Logger::instance().error("Unhandled unknown exception in ScriptMain.");
-        for (;;) {
-            scriptWait(1000);
-        }
     }
+
+    shutdown();
+}
+
+void Runtime::requestStop() noexcept {
+    stopRequested_.store(true, std::memory_order_release);
 }
 
 void Runtime::tick() {
     ++frameCount_;
-    const auto now = nowMs();
+    scheduler_.tick(nowMs());
+}
 
-    if (now - lastFiveHzMs_ >= 200) {
-        lastFiveHzMs_ = now;
-        tickFiveHz();
+void Runtime::tickFrame() {
+    if (config_.debugHotkeys) {
+        handleDebugHotkeys();
     }
-
-    if (now - lastTwoHzMs_ >= 500) {
-        lastTwoHzMs_ = now;
-        tickTwoHz();
-    }
-
-    if (now - lastOneHzMs_ >= 1000) {
-        lastOneHzMs_ = now;
-        tickOneHz();
-    }
-
     if (config_.debugOverlay) {
         renderDebugOverlay();
-    }
-
-    if (config_.debugLogging && now - lastHeartbeatMs_ >= 30000) {
-        lastHeartbeatMs_ = now;
-        std::ostringstream out;
-        out << "Runtime heartbeat; frames=" << frameCount_
-            << ", missionSuspended=" << (missionSuspended_ ? "true" : "false")
-            << ", nearbyPeds=" << nearbyPedCount_
-            << ", nearbyVehicles=" << nearbyVehicleCount_;
-        Logger::instance().debug(out.str());
     }
 }
 
 void Runtime::tickFiveHz() {
     missionState_ = platform_.world.missionState();
-    const bool shouldSuspend = missionState_.shouldSuspendGameplay();
+    const auto previousLevel = missionGate_.level();
+    const auto currentLevel = missionGate_.update(MissionCompatibilitySignals{
+        missionState_.missionFlag,
+        missionState_.cutsceneActive,
+        missionState_.cutscenePlaying,
+        missionState_.playerControlOn
+    });
 
-    if (shouldSuspend != missionSuspended_) {
-        missionSuspended_ = shouldSuspend;
-        Logger::instance().info(missionSuspended_
-            ? "Story mission/cutscene restriction detected; gameplay-facing world sampling suspended."
-            : "Story mission/cutscene restriction cleared; world sampling resumed.");
+    if (currentLevel != previousLevel) {
+        Logger::instance().info(
+            "Mission compatibility changed: " + compatibilityLevelName(previousLevel)
+            + " -> " + compatibilityLevelName(currentLevel) + ".");
+
+        if (currentLevel == MissionCompatibilityLevel::Suspended) {
+            eventBus_.publish(RuntimeEvent{"runtime.mission_suspend", 0, {}});
+        } else if (currentLevel == MissionCompatibilityLevel::Restricted) {
+            eventBus_.publish(RuntimeEvent{"runtime.mission_restricted", 0, {}});
+        } else {
+            eventBus_.publish(RuntimeEvent{"runtime.mission_resume", 0, {}});
+        }
     }
 
-    if (missionSuspended_) {
+    if (!missionGate_.gameplayAllowed()) {
         playerSnapshot_.reset();
         nearbyPedCount_ = 0;
         nearbyVehicleCount_ = 0;
@@ -172,15 +238,41 @@ void Runtime::tickTwoHz() {
 }
 
 void Runtime::tickOneHz() {
-    // Stage 1 deliberately keeps case/business/persistence domain work out of the adapter layer.
+    const auto now = nowMs();
+    if (config_.debugLogging && now - lastHeartbeatMs_ >= 30000) {
+        lastHeartbeatMs_ = now;
+        logDiagnostics();
+    }
+}
+
+void Runtime::handleDebugHotkeys() {
+    const bool f9Down = keyDown(VK_F9);
+    const bool f10Down = keyDown(VK_F10);
+    const bool f11Down = keyDown(VK_F11);
+
+    if (f9Down && !f9WasDown_) {
+        debugCommands_.execute("dump_status");
+    }
+    if (f10Down && !f10WasDown_) {
+        debugCommands_.execute("toggle_overlay");
+    }
+    if (f11Down && !f11WasDown_) {
+        debugCommands_.execute("validate_save");
+    }
+
+    f9WasDown_ = f9Down;
+    f10WasDown_ = f10Down;
+    f11WasDown_ = f11Down;
 }
 
 void Runtime::renderDebugOverlay() {
     std::ostringstream text;
-    text << "GCO Stage 1 | Wanted " << platform_.world.wantedLevel();
+    text << "GCO " << BuildInfo::Version
+         << " | " << compatibilityLevelName(missionGate_.level())
+         << " | Wanted " << platform_.world.wantedLevel();
 
-    if (missionSuspended_) {
-        text << " | SUSPENDED (mission/cutscene)";
+    if (!missionGate_.gameplayAllowed()) {
+        text << " | world sampling paused";
         platform_.ui.helpText(text.str(), false);
         return;
     }
@@ -192,7 +284,6 @@ void Runtime::renderDebugOverlay() {
         return;
     }
 
-    // Debug-only proof of the spatial adapter used later by witness perception.
     auto origin = playerSnapshot_->position;
     origin.z += 0.75f;
     platform_.debugDraw.witnessCone(
@@ -203,16 +294,51 @@ void Runtime::renderDebugOverlay() {
         platform::Rgba{255, 255, 255, 160});
 }
 
+void Runtime::logDiagnostics() {
+    std::ostringstream out;
+    out << "Diagnostics: version=" << BuildInfo::Version
+        << ", git=" << BuildInfo::GitSha
+        << ", schema=" << BuildInfo::SaveSchemaVersion
+        << ", frames=" << frameCount_
+        << ", compatibility=" << compatibilityLevelName(missionGate_.level())
+        << ", nearbyPeds=" << nearbyPedCount_
+        << ", nearbyVehicles=" << nearbyVehicleCount_
+        << ", schedulerTasks=" << scheduler_.recurringTaskCount()
+        << ", queuedTasks=" << scheduler_.queuedTaskCount()
+        << ", eventSubscribers=" << eventBus_.subscriberCount()
+        << ", nextCaseSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Case)
+        << ", nextVehicleSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Vehicle);
+    Logger::instance().debug(out.str());
+}
+
+void Runtime::validateSaveDiagnostic() {
+    std::string reason;
+    if (worldState_.validateFile(paths_.worldSave, &reason)) {
+        Logger::instance().info("Debug save validation PASS: schema and persistence invariants are valid.");
+    } else {
+        Logger::instance().error("Debug save validation FAIL: " + reason);
+    }
+}
+
 void Runtime::shutdown() {
     if (!initialized_) {
+        Logger::instance().close();
         return;
     }
 
+    eventBus_.publish(RuntimeEvent{"runtime.stopping", 0, {}});
+    scheduler_.clear();
+    eventBus_.clear();
     playerSnapshot_.reset();
     nearbyPedCount_ = 0;
     nearbyVehicleCount_ = 0;
 
-    Logger::instance().info("GTA Crime Overhaul shutting down.");
+    std::string saveReason;
+    if (!worldState_.validateFile(paths_.worldSave, &saveReason)) {
+        Logger::instance().warn("World save failed shutdown validation: " + saveReason);
+    }
+
+    Logger::instance().info("GTA Crime Overhaul shutting down cleanly.");
     initialized_ = false;
     Logger::instance().close();
 }
