@@ -5,9 +5,14 @@
 
 #include <exception>
 #include <sstream>
+#include <string>
 
 namespace gco {
 namespace {
+
+constexpr float kDebugWorldRadius = 80.0f;
+constexpr std::size_t kDebugPedLimit = 64;
+constexpr std::size_t kDebugVehicleLimit = 64;
 
 std::uint64_t nowMs() {
     return static_cast<std::uint64_t>(GetTickCount64());
@@ -40,7 +45,6 @@ bool Runtime::initialize() {
     Logger::instance().info(std::string("Build version: ") + GCO_VERSION);
 #endif
 
-    // Reload after the directories exist. This keeps defaults safe on first boot.
     config_ = RuntimeConfig::load(paths_.configFile);
 
     if (!worldState_.ensureInitialized()) {
@@ -66,7 +70,6 @@ bool Runtime::initialize() {
 void Runtime::run() {
     try {
         if (!initialize()) {
-            // Stay yielded rather than repeatedly attempting initialization every frame.
             for (;;) {
                 scriptWait(1000);
             }
@@ -110,33 +113,104 @@ void Runtime::tick() {
         tickOneHz();
     }
 
+    if (config_.debugOverlay) {
+        renderDebugOverlay();
+    }
+
     if (config_.debugLogging && now - lastHeartbeatMs_ >= 30000) {
         lastHeartbeatMs_ = now;
         std::ostringstream out;
-        out << "Runtime heartbeat; frames=" << frameCount_;
+        out << "Runtime heartbeat; frames=" << frameCount_
+            << ", missionSuspended=" << (missionSuspended_ ? "true" : "false")
+            << ", nearbyPeds=" << nearbyPedCount_
+            << ", nearbyVehicles=" << nearbyVehicleCount_;
         Logger::instance().debug(out.str());
     }
-
-    // Per-frame work is intentionally empty in Phase 0.
-    // Future additions here are limited to critical input/UI/active interaction supervision.
 }
 
 void Runtime::tickFiveHz() {
-    // Reserved for bounded nearby-world snapshots and active interaction availability.
+    missionState_ = platform_.world.missionState();
+    const bool shouldSuspend = missionState_.shouldSuspendGameplay();
+
+    if (shouldSuspend != missionSuspended_) {
+        missionSuspended_ = shouldSuspend;
+        Logger::instance().info(missionSuspended_
+            ? "Story mission/cutscene restriction detected; gameplay-facing world sampling suspended."
+            : "Story mission/cutscene restriction cleared; world sampling resumed.");
+    }
+
+    if (missionSuspended_) {
+        playerSnapshot_.reset();
+        nearbyPedCount_ = 0;
+        nearbyVehicleCount_ = 0;
+        return;
+    }
+
+    const auto player = platform_.world.playerPed();
+    playerSnapshot_ = platform_.world.snapshotPed(player);
+    if (!playerSnapshot_) {
+        nearbyPedCount_ = 0;
+        nearbyVehicleCount_ = 0;
+        return;
+    }
+
+    const auto peds = platform_.world.nearbyPeds(
+        playerSnapshot_->position,
+        kDebugWorldRadius,
+        kDebugPedLimit);
+    const auto vehicles = platform_.world.nearbyVehicles(
+        playerSnapshot_->position,
+        kDebugWorldRadius,
+        kDebugVehicleLimit);
+
+    nearbyPedCount_ = peds.size();
+    nearbyVehicleCount_ = vehicles.size();
 }
 
 void Runtime::tickTwoHz() {
-    // Reserved for staggered witness perception, police search planning and nearby scene logic.
+    // Stage 1 deliberately keeps perception/police logic out of the adapter layer.
 }
 
 void Runtime::tickOneHz() {
-    // Reserved for case housekeeping, business recovery and persistence reconciliation.
+    // Stage 1 deliberately keeps case/business/persistence domain work out of the adapter layer.
+}
+
+void Runtime::renderDebugOverlay() {
+    std::ostringstream text;
+    text << "GCO Stage 1 | Wanted " << platform_.world.wantedLevel();
+
+    if (missionSuspended_) {
+        text << " | SUSPENDED (mission/cutscene)";
+        platform_.ui.helpText(text.str(), false);
+        return;
+    }
+
+    text << " | Peds " << nearbyPedCount_ << " | Vehicles " << nearbyVehicleCount_;
+    platform_.ui.helpText(text.str(), false);
+
+    if (!playerSnapshot_ || !playerSnapshot_->alive) {
+        return;
+    }
+
+    // Debug-only proof of the spatial adapter used later by witness perception.
+    auto origin = playerSnapshot_->position;
+    origin.z += 0.75f;
+    platform_.debugDraw.witnessCone(
+        origin,
+        playerSnapshot_->heading,
+        35.0f,
+        18.0f,
+        platform::Rgba{255, 255, 255, 160});
 }
 
 void Runtime::shutdown() {
     if (!initialized_) {
         return;
     }
+
+    playerSnapshot_.reset();
+    nearbyPedCount_ = 0;
+    nearbyVehicleCount_ = 0;
 
     Logger::instance().info("GTA Crime Overhaul shutting down.");
     initialized_ = false;

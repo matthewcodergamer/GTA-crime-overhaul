@@ -72,12 +72,17 @@ jobs:
       - name: Configure CMake
         shell: pwsh
         run: |
-          cmake -S . -B build -A x64 -DSCRIPTHOOKV_SDK_DIR="$env:SCRIPTHOOKV_SDK_DIR"
+          cmake -S . -B build -A x64 -DBUILD_TESTING=ON -DSCRIPTHOOKV_SDK_DIR="$env:SCRIPTHOOKV_SDK_DIR"
 
-      - name: Build Release ASI
+      - name: Build Release ASI and tests
         shell: pwsh
         run: |
           cmake --build build --config Release --parallel
+
+      - name: Run unit tests
+        shell: pwsh
+        run: |
+          ctest --test-dir build -C Release --output-on-failure
 
       - name: Locate ASI
         id: locate
