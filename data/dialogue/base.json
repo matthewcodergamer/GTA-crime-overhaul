@@ -2,6 +2,7 @@
   "schemaVersion": 2,
   "schema": "schema.json",
   "eventRegistry": "events.json",
+  "personaRegistry": "personas.json",
   "packs": [
     "clerks.json",
     "civilians.json",
@@ -9,11 +10,13 @@
     "police.json",
     "guards.json",
     "hostages.json",
+    "persona_lines.json",
     "fallbacks.json"
   ],
   "selectionPolicy": {
     "weightedRandom": true,
     "respectConditions": true,
+    "respectPersonaConstraints": true,
     "lineCooldowns": true,
     "sessionMax": true,
     "noRepeatGroup": true,
@@ -24,6 +27,8 @@
   "audioPolicy": {
     "ambientSpeechMappingStatus": "not_validated",
     "voicePackStatus": "not_validated",
+    "generatedVoiceStatus": "reference_only",
+    "lipSyncStatus": "reference_only",
     "requireValidatedAssetBeforeNonNullReference": true
   }
 }

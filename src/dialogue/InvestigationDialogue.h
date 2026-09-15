@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SpeakerPresentation.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -121,6 +123,11 @@ struct ConversationTurn final {
 
 struct InterviewPlan final {
     std::vector<ConversationTurn> turns;
+
+    // Presentation-only metadata is attached after evidence planning. This separation is
+    // intentional: age/gender/voice style can never change what the witness knows.
+    SpeakerPresentationProfile officerProfile{};
+    SpeakerPresentationProfile witnessProfile{};
 
     [[nodiscard]] bool empty() const noexcept { return turns.empty(); }
     [[nodiscard]] std::size_t size() const noexcept { return turns.size(); }

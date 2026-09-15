@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "voiceGenders": ["masculine", "feminine"],
+  "ageBands": ["young_adult", "adult", "older_adult"],
+  "speechRegisters": ["grounded_contemporary", "neutral_professional", "measured"],
+  "policy": {
+    "genderAffects": ["voice_selection"],
+    "ageAffects": ["voice_selection", "cadence", "subtle_wording_bias"],
+    "neverAffects": ["evidence_truth", "case_confidence", "recognition", "warrant_state"],
+    "unknownAgeFallback": "adult",
+    "ambientPedAgeInference": "do_not_guess",
+    "forcedSlangAllowed": false,
+    "caricatureAllowed": false,
+    "ageStyle": {
+      "young_adult": {
+        "pace": "slightly_quicker",
+        "wording": "shorter contemporary neutral phrasing",
+        "contractions": "natural",
+        "avoid": ["forced youth slang", "internet slang", "stereotyped Gen-Z phrasing"]
+      },
+      "adult": {
+        "pace": "neutral",
+        "wording": "plain grounded phrasing",
+        "contractions": "natural",
+        "avoid": ["age-coded gimmicks"]
+      },
+      "older_adult": {
+        "pace": "slightly_measured",
+        "wording": "slightly more complete and deliberate phrasing",
+        "contractions": "natural",
+        "avoid": ["archaic caricature", "frailty stereotypes", "back-in-my-day clichés"]
+      }
+    }
+  },
+  "roleStyles": {
+    "clerk": {
+      "register": "grounded_contemporary",
+      "direction": "ordinary retail worker; brief, natural, situation-aware; stress changes pace more than vocabulary"
+    },
+    "witness": {
+      "register": "grounded_contemporary",
+      "direction": "ordinary civilian statement; concise; confidence controls certainty; no detective language"
+    },
+    "guard": {
+      "register": "grounded_contemporary",
+      "direction": "security worker; direct and practical without military caricature"
+    },
+    "patrol_officer": {
+      "register": "neutral_professional",
+      "direction": "street-level professional; short clear questions; calm unless scene danger requires urgency"
+    },
+    "investigating_officer": {
+      "register": "neutral_professional",
+      "direction": "professional and methodical; measured follow-up questions; never theatrical detective exposition"
+    }
+  },
+  "provider": {
+    "id": "gemini_tts",
+    "status": "reference_only",
+    "validationRule": "No voice set becomes production-authoritative until generated audio is manually validated in-game for speaker fit, clarity, spatial playback and cleanup.",
+    "source": "https://ai.google.dev/gemini-api/docs/speech-generation"
+  },
+  "voiceSets": [
+    {"id":"clerk.masculine.young_adult","role":"clerk","voiceGender":"masculine","ageBand":"young_adult","candidateVoices":["Achird","Iapetus"],"status":"reference_only"},
+    {"id":"clerk.masculine.adult","role":"clerk","voiceGender":"masculine","ageBand":"adult","candidateVoices":["Achird","Iapetus","Charon"],"status":"reference_only"},
+    {"id":"clerk.masculine.older_adult","role":"clerk","voiceGender":"masculine","ageBand":"older_adult","candidateVoices":["Sadaltager","Rasalgethi","Algenib"],"status":"reference_only"},
+    {"id":"clerk.feminine.young_adult","role":"clerk","voiceGender":"feminine","ageBand":"young_adult","candidateVoices":["Leda","Erinome"],"status":"reference_only"},
+    {"id":"clerk.feminine.adult","role":"clerk","voiceGender":"feminine","ageBand":"adult","candidateVoices":["Erinome","Despina","Sulafat"],"status":"reference_only"},
+    {"id":"clerk.feminine.older_adult","role":"clerk","voiceGender":"feminine","ageBand":"older_adult","candidateVoices":["Gacrux","Vindemiatrix","Sulafat"],"status":"reference_only"},
+
+    {"id":"witness.masculine.young_adult","role":"witness","voiceGender":"masculine","ageBand":"young_adult","candidateVoices":["Achird","Iapetus"],"status":"reference_only"},
+    {"id":"witness.masculine.adult","role":"witness","voiceGender":"masculine","ageBand":"adult","candidateVoices":["Achird","Iapetus","Charon"],"status":"reference_only"},
+    {"id":"witness.masculine.older_adult","role":"witness","voiceGender":"masculine","ageBand":"older_adult","candidateVoices":["Sadaltager","Rasalgethi","Algenib"],"status":"reference_only"},
+    {"id":"witness.feminine.young_adult","role":"witness","voiceGender":"feminine","ageBand":"young_adult","candidateVoices":["Leda","Erinome"],"status":"reference_only"},
+    {"id":"witness.feminine.adult","role":"witness","voiceGender":"feminine","ageBand":"adult","candidateVoices":["Erinome","Despina","Callirrhoe"],"status":"reference_only"},
+    {"id":"witness.feminine.older_adult","role":"witness","voiceGender":"feminine","ageBand":"older_adult","candidateVoices":["Gacrux","Vindemiatrix","Sulafat"],"status":"reference_only"},
+
+    {"id":"guard.masculine.young_adult","role":"guard","voiceGender":"masculine","ageBand":"young_adult","candidateVoices":["Iapetus","Orus"],"status":"reference_only"},
+    {"id":"guard.masculine.adult","role":"guard","voiceGender":"masculine","ageBand":"adult","candidateVoices":["Orus","Iapetus","Alnilam"],"status":"reference_only"},
+    {"id":"guard.masculine.older_adult","role":"guard","voiceGender":"masculine","ageBand":"older_adult","candidateVoices":["Rasalgethi","Sadaltager","Algenib"],"status":"reference_only"},
+    {"id":"guard.feminine.young_adult","role":"guard","voiceGender":"feminine","ageBand":"young_adult","candidateVoices":["Erinome","Kore"],"status":"reference_only"},
+    {"id":"guard.feminine.adult","role":"guard","voiceGender":"feminine","ageBand":"adult","candidateVoices":["Kore","Erinome","Pulcherrima"],"status":"reference_only"},
+    {"id":"guard.feminine.older_adult","role":"guard","voiceGender":"feminine","ageBand":"older_adult","candidateVoices":["Gacrux","Kore","Vindemiatrix"],"status":"reference_only"},
+
+    {"id":"patrol_officer.masculine.young_adult","role":"patrol_officer","voiceGender":"masculine","ageBand":"young_adult","candidateVoices":["Iapetus","Orus"],"status":"reference_only"},
+    {"id":"patrol_officer.masculine.adult","role":"patrol_officer","voiceGender":"masculine","ageBand":"adult","candidateVoices":["Orus","Charon","Iapetus"],"status":"reference_only"},
+    {"id":"patrol_officer.masculine.older_adult","role":"patrol_officer","voiceGender":"masculine","ageBand":"older_adult","candidateVoices":["Rasalgethi","Sadaltager","Alnilam"],"status":"reference_only"},
+    {"id":"patrol_officer.feminine.young_adult","role":"patrol_officer","voiceGender":"feminine","ageBand":"young_adult","candidateVoices":["Erinome","Kore"],"status":"reference_only"},
+    {"id":"patrol_officer.feminine.adult","role":"patrol_officer","voiceGender":"feminine","ageBand":"adult","candidateVoices":["Kore","Erinome","Pulcherrima"],"status":"reference_only"},
+    {"id":"patrol_officer.feminine.older_adult","role":"patrol_officer","voiceGender":"feminine","ageBand":"older_adult","candidateVoices":["Gacrux","Kore","Vindemiatrix"],"status":"reference_only"},
+
+    {"id":"investigating_officer.masculine.young_adult","role":"investigating_officer","voiceGender":"masculine","ageBand":"young_adult","candidateVoices":["Iapetus","Charon"],"status":"reference_only"},
+    {"id":"investigating_officer.masculine.adult","role":"investigating_officer","voiceGender":"masculine","ageBand":"adult","candidateVoices":["Charon","Iapetus","Rasalgethi"],"status":"reference_only"},
+    {"id":"investigating_officer.masculine.older_adult","role":"investigating_officer","voiceGender":"masculine","ageBand":"older_adult","candidateVoices":["Rasalgethi","Sadaltager","Charon"],"status":"reference_only"},
+    {"id":"investigating_officer.feminine.young_adult","role":"investigating_officer","voiceGender":"feminine","ageBand":"young_adult","candidateVoices":["Erinome","Kore"],"status":"reference_only"},
+    {"id":"investigating_officer.feminine.adult","role":"investigating_officer","voiceGender":"feminine","ageBand":"adult","candidateVoices":["Kore","Erinome","Despina"],"status":"reference_only"},
+    {"id":"investigating_officer.feminine.older_adult","role":"investigating_officer","voiceGender":"feminine","ageBand":"older_adult","candidateVoices":["Gacrux","Kore","Vindemiatrix"],"status":"reference_only"}
+  ],
+  "lipSync": {
+    "strategy": "pcm_envelope_gated_facial_animation",
+    "status": "reference_only",
+    "talkCandidate": {
+      "dictionary": "mp_facial",
+      "clip": "mic_chatter",
+      "status": "reference_only"
+    },
+    "neutralCandidates": {
+      "masculine": {
+        "dictionary": "facials@gen_male@variations@normal",
+        "clip": "mood_normal_2",
+        "status": "reference_only"
+      },
+      "feminine": {
+        "dictionary": "facials@gen_female@variations@normal",
+        "clip": "mood_normal_2",
+        "status": "reference_only"
+      }
+    },
+    "productionRule": "Drive mouth activity from the exact PCM being played. Do not fake sync from subtitle duration. Facial assets must be manually validated in Legacy and Enhanced before promotion."
+  }
+}

@@ -63,12 +63,18 @@ add_library(GTA_Crime_Overhaul SHARED
     src/IdStatePersistence.cpp
     src/dialogue/InvestigationDialogue.cpp
     src/dialogue/InvestigationDialogue.h
+    src/dialogue/SpeakerPresentation.cpp
+    src/dialogue/SpeakerPresentation.h
     src/platform/PlatformTypes.cpp
     src/platform/PlatformTypes.h
     src/platform/PlatformAdapters.cpp
     src/platform/PlatformAdapters.h
     src/platform/AdapterDiagnostics.cpp
     src/platform/AdapterDiagnostics.h
+    src/platform/FacialAnimationAdapter.cpp
+    src/platform/FacialAnimationAdapter.h
+    src/platform/PedPresentationAdapter.cpp
+    src/platform/PedPresentationAdapter.h
 )
 
 target_include_directories(GTA_Crime_Overhaul PRIVATE
@@ -158,12 +164,22 @@ if(BUILD_TESTING)
         tests/InvestigationDialogueTests.cpp
         src/dialogue/InvestigationDialogue.cpp
         src/dialogue/InvestigationDialogue.h
+        src/dialogue/SpeakerPresentation.h
     )
     target_include_directories(GCO_InvestigationDialogueTests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
 
-    foreach(test_target IN ITEMS GCO_PlatformTypesTests GCO_CoreServicesTests GCO_PersistenceTests GCO_InvestigationDialogueTests)
+    add_executable(GCO_SpeakerPresentationTests
+        tests/SpeakerPresentationTests.cpp
+        src/dialogue/SpeakerPresentation.cpp
+        src/dialogue/SpeakerPresentation.h
+    )
+    target_include_directories(GCO_SpeakerPresentationTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+
+    foreach(test_target IN ITEMS GCO_PlatformTypesTests GCO_CoreServicesTests GCO_PersistenceTests GCO_InvestigationDialogueTests GCO_SpeakerPresentationTests)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE
                 /W4
@@ -178,6 +194,7 @@ if(BUILD_TESTING)
     add_test(NAME CoreServices COMMAND GCO_CoreServicesTests)
     add_test(NAME Persistence COMMAND GCO_PersistenceTests)
     add_test(NAME InvestigationDialogue COMMAND GCO_InvestigationDialogueTests)
+    add_test(NAME SpeakerPresentation COMMAND GCO_SpeakerPresentationTests)
 endif()
 
 install(TARGETS GTA_Crime_Overhaul
