@@ -4,6 +4,7 @@
 #include "StoreTarget.h"
 #include "crime/CrimeDirector.h"
 #include "crime/CrimeRegistry.h"
+#include "identity/IdentitySystem.h"
 #include "platform/PedPresentationAdapter.h"
 #include "platform/PlatformAdapters.h"
 #include "platform/RobberyPedAdapter.h"
@@ -47,6 +48,15 @@ public:
     [[nodiscard]] platform::PedHandle boundClerkPed() const noexcept { return clerkPed_; }
     [[nodiscard]] const PrototypeStoreTarget& target() const noexcept { return target_; }
     [[nodiscard]] const PrototypeStoreModel& model() const noexcept { return model_; }
+    [[nodiscard]] const identity::RecognitionMemory& clerkRecognitionMemory() const noexcept {
+        return model_.persistent().clerk.recognition;
+    }
+    bool updateClerkRecognition(identity::RecognitionMemory memory) {
+        if (!initialized_ || model_.persistent().clerk.id == 0 || !model_.persistent().clerk.alive) return false;
+        model_.persistent().clerk.recognition = std::move(memory);
+        persistenceDirty_ = true;
+        return true;
+    }
 
 private:
     platform::PedHandle acquireClerkPed(std::uint64_t persistentNowMs);
