@@ -22,19 +22,40 @@ The repository does **not** redistribute `ScriptHookV.dll` or the ASI loader. Do
 
 ## Current stage
 
-**Phase 0 — native foundation.** The repository starts with the production architecture, feasibility locks, master roadmap, persistent data contracts and a loadable ASI skeleton. Gameplay is then implemented vertically, beginning with one fully simulated 24/7 robbery before scaling to all stores or banks.
+**Phase 0 native foundation is complete. Research/production planning is now locked for the gameplay stages.** The repository contains the buildable ASI skeleton, persistent data contracts, feasibility locks, a 390-step zero-to-complete roadmap, GTA asset/animation research, dialogue architecture, and reusable AI-agent prompts for implementing every stage without guessing engine capabilities.
 
-Read these before changing gameplay:
+The next gameplay implementation target is still one fully simulated 24/7 robbery before scaling to all stores or banks.
 
-- `docs/DESIGN_LOCKS.md`
-- `docs/MASTER_PLAN.md`
-- `docs/ARCHITECTURE.md`
-- `docs/FEASIBILITY_MATRIX.md`
-- `docs/CRIME_LAW_SYSTEM.md`
-- `docs/ROBBERY_ECONOMY_VEHICLES.md`
-- `docs/BUILD_AND_RELEASE.md`
+## Read before changing gameplay
+
+Read in this order:
+
+1. `docs/DESIGN_LOCKS.md`
+2. `docs/MASTER_PLAN.md`
+3. `docs/ARCHITECTURE.md`
+4. `docs/FEASIBILITY_MATRIX.md`
+5. `docs/RESEARCH_IMPLEMENTATION_PLAN.md`
+6. `docs/ASSET_ANIMATION_CATALOG.md`
+7. `docs/DIALOGUE_BIBLE.md`
+8. `docs/RESEARCH_SOURCES.md`
+9. `docs/CRIME_LAW_SYSTEM.md`
+10. `docs/ROBBERY_ECONOMY_VEHICLES.md`
+11. `docs/BUILD_AND_RELEASE.md`
 
 If a later idea conflicts with `docs/DESIGN_LOCKS.md`, update the lock deliberately rather than silently changing the design.
+
+## AI implementation prompt pack
+
+Use these when handing work to ChatGPT/Codex or another coding agent:
+
+- `prompts/MASTER_AGENT_PROMPT.md` — permanent project rules and architecture contract.
+- `prompts/STAGE_PROMPTS.md` — Stage 0 through Stage 20 plus final acceptance campaign.
+- `prompts/STEP_EXECUTION_TEMPLATE.md` — converts any numbered roadmap item into a safe focused coding task.
+- `prompts/RESEARCH_AND_ASSET_PROMPTS.md` — natives, animations, models, interiors, masks, trunks, speech and feasibility research.
+- `prompts/DIALOGUE_AUTHORING_PROMPTS.md` — clerk, robber, civilian, witness, police, guard/hostage and anti-repetition content generation.
+- `prompts/QA_AND_GAUNTLET_PROMPTS.md` — builder/critic/repair/regression loops and feature-specific torture tests.
+
+The prompts explicitly forbid guessed GTA native/animation/model identifiers. Asset findings must be classified as `VERIFIED_IN_GAME`, `VERIFIED_DATA`, `REFERENCE_ONLY`, `CUSTOM_REQUIRED`, or `REJECTED`.
 
 ## Major systems
 
@@ -57,6 +78,16 @@ If a later idea conflicts with `docs/DESIGN_LOCKS.md`, update the lock deliberat
 - Store security escalation after repeated robberies
 - Fleeca → Pacific Standard → major-score progression
 - Minimal Rockstar-style HUD, data-driven dialogue, ambient police interviews and reusable animation orchestration
+
+## Asset strategy
+
+Use existing GTA V content first. Current research catalogs candidate GTA V heist bags, cash/trolley/drill props, Fleeca/vault interactions, heist money-grab animations, surrender/hands-up/cower, phone reporting, cop/clipboard/medic presentation and mask/component data. Candidates are not production-authoritative until validated in the target game build.
+
+If GTA V lacks a suitable asset, create an **original GTA-compatible custom asset** using an appropriate Blender/Sollumz/OpenIV development pipeline and only distribute content we have rights to. Do not port RDR2 or GTA VI assets.
+
+## Dialogue rule
+
+Dialogue is not one repeated script. C++ emits semantic events and a data-driven selector chooses among lines using speaker archetype, personality, fear, violence, evidence actually observed, prior memory, robbery phase, cooldown groups, usage history and optional silence. Existing installed GTA speech can be referenced when it genuinely fits; exact story-specific lines are not forced into unrelated situations. Original subtitles and optional authorized voice packs cover gaps.
 
 ## Development rule
 
