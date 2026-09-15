@@ -27,6 +27,15 @@ struct WitnessDirectorTuning final {
     WitnessPerceptionPolicy perception{};
 };
 
+struct InterviewCandidateSnapshot final {
+    platform::PedHandle ped = 0;
+    std::string sourceKey;
+    WitnessObservation observation{};
+    ReportingState reportingState = ReportingState::None;
+    bool alive = false;
+    platform::Vec3 lastPosition{};
+};
+
 class WitnessDirector final {
 public:
     WitnessDirector(
@@ -86,6 +95,28 @@ private:
         bool lastHeard = false;
     };
 
+public:
+    [[nodiscard]] std::vector<InterviewCandidateSnapshot> interviewCandidates(const LogicalId caseId) const {
+        std::vector<InterviewCandidateSnapshot> result;
+        if (caseId == 0) return result;
+        for (const auto& candidate : candidates_) {
+            if (candidate.observation.caseId != caseId || candidate.ped == 0 || !candidate.wasAlive) continue;
+            if (candidate.report.state != ReportingState::PartialReported
+                && candidate.report.state != ReportingState::Reported) {
+                continue;
+            }
+            result.push_back(InterviewCandidateSnapshot{
+                candidate.ped,
+                candidate.sourceKey,
+                candidate.observation,
+                candidate.report.state,
+                candidate.wasAlive,
+                candidate.lastPosition});
+        }
+        return result;
+    }
+
+private:
     void onRobberyStarted(const RuntimeEvent& event);
     void onRobberyFinished(const RuntimeEvent& event);
     void onViolenceEvent(const RuntimeEvent& event);
