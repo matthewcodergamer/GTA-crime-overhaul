@@ -84,6 +84,12 @@ Runtime::Runtime()
           crimeDirector_,
           crimeRegistry_,
           idGenerator_,
+          eventBus_),
+      witnessDirector_(
+          platform_,
+          pedPresentation_,
+          crimeDirector_,
+          crimeRegistry_,
           eventBus_) {}
 
 Runtime::~Runtime() {
@@ -145,6 +151,8 @@ bool Runtime::initialize() {
         Logger::instance().warn("PersistentCases=false; case save/load is disabled for this session.");
     }
 
+    witnessDirector_.initialize();
+
     if (config_.robberySystem) {
         std::string storeReason;
         if (!storeRuntime_.initialize(persistentNowMs(), &storeReason)) {
@@ -172,7 +180,7 @@ bool Runtime::initialize() {
 
     eventBus_.publish(RuntimeEvent{"runtime.started", 0, std::string(BuildInfo::Version)});
     Logger::instance().info("Native ASI runtime initialized successfully.");
-    Logger::instance().info("Debug hotkeys: F4=prototype-store survey candidate, F5=case inspector, F6=synthetic Stage 2 case/save/reload test, F7=investigation dialogue demo, F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
+    Logger::instance().info("Debug hotkeys: F3=toggle witness FOV/LOS debug, F4=prototype-store survey candidate, F5=case inspector, F6=synthetic Stage 2 case/save/reload test, F7=investigation dialogue demo, F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
     return true;
 }
 
@@ -206,6 +214,14 @@ void Runtime::configureDebugCommands() {
     debugCommands_.registerCommand("validate_save", [this]() { validateSaveDiagnostic(); });
     debugCommands_.registerCommand("crime.inspect", [this]() { logCaseInspector(); });
     debugCommands_.registerCommand("crime.synthetic", [this]() { runSyntheticCrimeDiagnostic(); });
+    debugCommands_.registerCommand("witness.debug_toggle", [this]() {
+        witnessDirector_.toggleDebug();
+        Logger::instance().info(std::string("Witness spatial/FOV/LOS debug ")
+            + (witnessDirector_.debugEnabled() ? "enabled" : "disabled") + ".");
+    });
+    debugCommands_.registerCommand("witness.inspect", [this]() {
+        Logger::instance().info(witnessDirector_.debugSummary());
+    });
     debugCommands_.registerCommand("store.survey", [this]() {
         if (config_.robberySystem) storeRuntime_.debugSurveyCurrentPosition();
     });
@@ -324,6 +340,8 @@ void Runtime::tickFrame() {
         }
     }
 
+    witnessDirector_.renderDebug();
+
     if (config_.debugOverlay) {
         renderDebugOverlay();
     }
@@ -354,9 +372,14 @@ void Runtime::tickFiveHz() {
     }
 
     const bool gameplayAllowed = missionGate_.gameplayAllowed();
+    const auto persistentNow = persistentNowMs();
     if (config_.robberySystem) {
-        storeRuntime_.tickFiveHz(persistentNowMs(), gameplayAllowed);
+        storeRuntime_.tickFiveHz(persistentNow, gameplayAllowed);
     }
+    witnessDirector_.tickFiveHz(
+        persistentNow,
+        gameplayAllowed,
+        config_.robberySystem ? storeRuntime_.boundClerkPed() : 0);
 
     if (!gameplayAllowed) {
         if (!investigationDemoPlan_.empty()) {
@@ -390,7 +413,7 @@ void Runtime::tickFiveHz() {
 }
 
 void Runtime::tickTwoHz() {
-    // Store behavior is bounded to its own 5 Hz vicinity/session controller. Stage 7 later owns police scenes.
+    // Witness perception is intentionally budgeted across the existing 5 Hz lane; Stage 7 later owns police scenes.
 }
 
 void Runtime::tickOneHz() {
@@ -411,6 +434,12 @@ void Runtime::tickOneHz() {
                 Logger::instance().warn("Prototype business memory saved but related case checkpoint failed; atomic backup remains available.");
             }
         }
+
+        // Stage 4 currently checkpoints while an incident is live. The WitnessDirector only
+        // writes meaningful reported observations into the case, never ambient candidate state.
+        if (config_.persistentCases && witnessDirector_.incidentActive()) {
+            saveCrimeState("witness observation/report checkpoint");
+        }
     }
 
     if (config_.debugLogging && now - lastHeartbeatMs_ >= 30000) {
@@ -420,6 +449,7 @@ void Runtime::tickOneHz() {
 }
 
 void Runtime::handleDebugHotkeys() {
+    const bool f3Down = keyDown(VK_F3);
     const bool f4Down = keyDown(VK_F4);
     const bool f5Down = keyDown(VK_F5);
     const bool f6Down = keyDown(VK_F6);
@@ -429,6 +459,9 @@ void Runtime::handleDebugHotkeys() {
     const bool f10Down = keyDown(VK_F10);
     const bool f11Down = keyDown(VK_F11);
 
+    if (f3Down && !f3WasDown_) {
+        debugCommands_.execute("witness.debug_toggle");
+    }
     if (f4Down && !f4WasDown_) {
         debugCommands_.execute("store.survey");
     }
@@ -454,6 +487,7 @@ void Runtime::handleDebugHotkeys() {
         debugCommands_.execute("validate_save");
     }
 
+    f3WasDown_ = f3Down;
     f4WasDown_ = f4Down;
     f5WasDown_ = f5Down;
     f6WasDown_ = f6Down;
@@ -466,7 +500,7 @@ void Runtime::handleDebugHotkeys() {
 
 void Runtime::renderDebugOverlay() {
     std::ostringstream text;
-    text << "GCO Stage 3 | " << BuildInfo::Version
+    text << "GCO Stage 4 | " << BuildInfo::Version
          << " | " << compatibilityLevelName(missionGate_.level())
          << " | Wanted " << platform_.world.wantedLevel()
          << " | Cases " << crimeRegistry_.caseCount();
@@ -474,6 +508,9 @@ void Runtime::renderDebugOverlay() {
     if (config_.robberySystem && storeRuntime_.initialized()) {
         text << " | Store " << (storeRuntime_.targetReady() ? "READY" : "RESEARCH")
              << (storeRuntime_.detailedActive() ? "/ACTIVE" : "/ABSTRACT");
+    }
+    if (witnessDirector_.incidentActive()) {
+        text << " | Witnesses " << witnessDirector_.candidateCount();
     }
 
     if (!missionGate_.gameplayAllowed()) {
@@ -865,6 +902,9 @@ void Runtime::logDiagnostics() {
         << ", crimes=" << crimeRegistry_.crimeCount()
         << ", storeReady=" << (config_.robberySystem && storeRuntime_.targetReady() ? "true" : "false")
         << ", storeDetailed=" << (config_.robberySystem && storeRuntime_.detailedActive() ? "true" : "false")
+        << ", witnessIncident=" << (witnessDirector_.incidentActive() ? "true" : "false")
+        << ", witnessCandidates=" << witnessDirector_.candidateCount()
+        << ", witnessDebug=" << (witnessDirector_.debugEnabled() ? "true" : "false")
         << ", investigationDemoActive=" << (!investigationDemoPlan_.empty() ? "true" : "false")
         << ", schedulerTasks=" << scheduler_.recurringTaskCount()
         << ", queuedTasks=" << scheduler_.queuedTaskCount()
@@ -955,6 +995,7 @@ void Runtime::shutdown() {
     if (config_.robberySystem) {
         storeRuntime_.shutdown(persistentNowMs());
     }
+    witnessDirector_.shutdown();
 
     const std::size_t cleanedProps = platform_.cleanupOwnedResources();
     if (cleanedProps > 0) {
