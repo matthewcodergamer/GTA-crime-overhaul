@@ -39,7 +39,7 @@ endif()
 if(NOT EXISTS "${SCRIPTHOOKV_SDK_DIR}/inc/main.h")
     message(FATAL_ERROR
         "ScriptHookV SDK not found. Set -DSCRIPTHOOKV_SDK_DIR=<path> or the "
-        "SCRIPTHOOKV_SDK_DIR environment variable. Expected inc/main.h.")
+        "SCRIPHOOKV_SDK_DIR environment variable. Expected inc/main.h.")
 endif()
 
 find_library(SCRIPTHOOKV_LIBRARY
@@ -48,8 +48,8 @@ find_library(SCRIPTHOOKV_LIBRARY
     NO_DEFAULT_PATH
 )
 
-if(NOT SCRIPTHOOKV_LIBRARY)
-    message(FATAL_ERROR "ScriptHookV.lib not found under ${SCRIPTHOOKV_SDK_DIR}/lib")
+if(NOT SCRIPHOOKV_LIBRARY)
+    message(FATAL_ERROR "ScriptHookV.lib not found under ${SCRIPHOOKV_SDK_DIR}/lib")
 endif()
 
 set(GCO_CRIME_SOURCES
@@ -115,6 +115,7 @@ set(GCO_INVESTIGATION_SOURCES
 add_library(GTA_Crime_Overhaul SHARED
     src/main.cpp
     src/Runtime.cpp
+    src/RuntimeStage7.cpp
     src/Runtime.h
     src/CoreServices.cpp
     src/CoreServices.h
@@ -157,7 +158,7 @@ target_include_directories(GTA_Crime_Overhaul PRIVATE
 )
 
 target_link_libraries(GTA_Crime_Overhaul PRIVATE
-    "${SCRIPTHOOKV_LIBRARY}"
+    "${SCRIPHOOKV_LIBRARY}"
 )
 
 target_compile_definitions(GTA_Crime_Overhaul PRIVATE
