@@ -133,7 +133,7 @@ Scheduler::TaskId Scheduler::addRecurring(
     }
 
     const TaskId id = nextTaskId_++;
-    recurring_.push_back(RecurringTask{id, lane, std::move(name), std::move(callback), 0});
+    recurring_.push_back(RecurringTask{id, lane, std::move(name), std::move(callback), 0, false});
     return id;
 }
 
@@ -180,12 +180,13 @@ void Scheduler::tick(const std::uint64_t nowMs) {
     for (auto& task : recurring_) {
         const auto interval = intervalMs(task.lane);
         const bool shouldRun = task.lane == SchedulerLane::Frame
-            || task.lastRunMs == 0
+            || !task.hasRun
             || nowMs - task.lastRunMs >= interval;
         if (!shouldRun) {
             continue;
         }
         task.lastRunMs = nowMs;
+        task.hasRun = true;
         due.push_back(DueTask{task.name, task.callback});
     }
 
