@@ -75,7 +75,16 @@ Runtime::Runtime()
       worldState_(paths_),
       adapterDiagnostics_(platform_),
       crimePersistence_(paths_, worldState_),
-      crimeDirector_(crimeRegistry_, idGenerator_, eventBus_) {}
+      crimeDirector_(crimeRegistry_, idGenerator_, eventBus_),
+      storeRuntime_(
+          paths_,
+          worldState_,
+          platform_,
+          pedPresentation_,
+          crimeDirector_,
+          crimeRegistry_,
+          idGenerator_,
+          eventBus_) {}
 
 Runtime::~Runtime() {
     shutdown();
@@ -136,6 +145,20 @@ bool Runtime::initialize() {
         Logger::instance().warn("PersistentCases=false; case save/load is disabled for this session.");
     }
 
+    if (config_.robberySystem) {
+        std::string storeReason;
+        if (!storeRuntime_.initialize(persistentNowMs(), &storeReason)) {
+            Logger::instance().error("Unable to initialize prototype store state: " + storeReason);
+            return false;
+        }
+        if (!storeRuntime_.saveIfDirty(&storeReason)) {
+            Logger::instance().error("Unable to persist initial prototype store state: " + storeReason);
+            return false;
+        }
+    } else {
+        Logger::instance().warn("RobberySystem=false; prototype-store runtime is disabled for this session.");
+    }
+
     if (!config_.enabled) {
         Logger::instance().warn("Mod is disabled in configuration; runtime will remain idle except for lifecycle cleanup.");
     }
@@ -149,7 +172,7 @@ bool Runtime::initialize() {
 
     eventBus_.publish(RuntimeEvent{"runtime.started", 0, std::string(BuildInfo::Version)});
     Logger::instance().info("Native ASI runtime initialized successfully.");
-    Logger::instance().info("Debug hotkeys: F5=case inspector, F6=synthetic Stage 2 case/save/reload test, F7=investigation dialogue demo, F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
+    Logger::instance().info("Debug hotkeys: F4=prototype-store survey candidate, F5=case inspector, F6=synthetic Stage 2 case/save/reload test, F7=investigation dialogue demo, F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
     return true;
 }
 
@@ -183,6 +206,33 @@ void Runtime::configureDebugCommands() {
     debugCommands_.registerCommand("validate_save", [this]() { validateSaveDiagnostic(); });
     debugCommands_.registerCommand("crime.inspect", [this]() { logCaseInspector(); });
     debugCommands_.registerCommand("crime.synthetic", [this]() { runSyntheticCrimeDiagnostic(); });
+    debugCommands_.registerCommand("store.survey", [this]() {
+        if (config_.robberySystem) storeRuntime_.debugSurveyCurrentPosition();
+    });
+    debugCommands_.registerCommand("store.inspect", [this]() {
+        if (config_.robberySystem) storeRuntime_.debugInspect();
+    });
+    debugCommands_.registerCommand("store.demand.open_register", [this]() {
+        if (config_.robberySystem) storeRuntime_.debugIssueDemand(robbery::StoreDemand::OpenRegister, persistentNowMs());
+    });
+    debugCommands_.registerCommand("store.demand.second_register", [this]() {
+        if (config_.robberySystem) storeRuntime_.debugIssueDemand(robbery::StoreDemand::OpenSecondRegister, persistentNowMs());
+    });
+    debugCommands_.registerCommand("store.demand.safe", [this]() {
+        if (config_.robberySystem) storeRuntime_.debugIssueDemand(robbery::StoreDemand::EmptySafe, persistentNowMs());
+    });
+    debugCommands_.registerCommand("store.demand.hands_up", [this]() {
+        if (config_.robberySystem) storeRuntime_.debugIssueDemand(robbery::StoreDemand::HandsUp, persistentNowMs());
+    });
+    debugCommands_.registerCommand("store.demand.get_down", [this]() {
+        if (config_.robberySystem) storeRuntime_.debugIssueDemand(robbery::StoreDemand::GetDown, persistentNowMs());
+    });
+    debugCommands_.registerCommand("store.demand.move_alarm", [this]() {
+        if (config_.robberySystem) storeRuntime_.debugIssueDemand(robbery::StoreDemand::MoveAwayFromAlarm, persistentNowMs());
+    });
+    debugCommands_.registerCommand("store.demand.dont_move", [this]() {
+        if (config_.robberySystem) storeRuntime_.debugIssueDemand(robbery::StoreDemand::DontMove, persistentNowMs());
+    });
     debugCommands_.registerCommand("dialogue.investigation_demo", [this]() {
         startInvestigationDialogueDemo();
     });
@@ -269,6 +319,9 @@ void Runtime::tickFrame() {
         }
         adapterDiagnostics_.renderVisualProbe(now);
         tickInvestigationDialogueDemo(now);
+        if (config_.robberySystem && storeRuntime_.detailedActive()) {
+            storeRuntime_.tickFrame(persistentNowMs(), true);
+        }
     }
 
     if (config_.debugOverlay) {
@@ -300,7 +353,12 @@ void Runtime::tickFiveHz() {
         }
     }
 
-    if (!missionGate_.gameplayAllowed()) {
+    const bool gameplayAllowed = missionGate_.gameplayAllowed();
+    if (config_.robberySystem) {
+        storeRuntime_.tickFiveHz(persistentNowMs(), gameplayAllowed);
+    }
+
+    if (!gameplayAllowed) {
         if (!investigationDemoPlan_.empty()) {
             stopInvestigationDialogueDemo("mission compatibility gate became active");
         }
@@ -332,15 +390,26 @@ void Runtime::tickFiveHz() {
 }
 
 void Runtime::tickTwoHz() {
-    // Stage 2 is event-driven domain state. Later dispatch/investigation/search planners own 2 Hz work.
+    // Store behavior is bounded to its own 5 Hz vicinity/session controller. Stage 7 later owns police scenes.
 }
 
 void Runtime::tickOneHz() {
     const auto now = nowMs();
-    if (config_.persistentCases && missionGate_.persistenceAllowed()) {
-        const std::size_t decayed = crimeDirector_.applyDecay(persistentNowMs());
-        if (decayed > 0) {
-            saveCrimeState("case decay housekeeping");
+    if (missionGate_.persistenceAllowed()) {
+        if (config_.persistentCases) {
+            const std::size_t decayed = crimeDirector_.applyDecay(persistentNowMs());
+            if (decayed > 0) {
+                saveCrimeState("case decay housekeeping");
+            }
+        }
+
+        if (config_.robberySystem && storeRuntime_.persistenceDirty()) {
+            std::string storeReason;
+            if (!storeRuntime_.saveIfDirty(&storeReason)) {
+                Logger::instance().error("Prototype store checkpoint save failed: " + storeReason);
+            } else if (!saveCrimeState("prototype store checkpoint")) {
+                Logger::instance().warn("Prototype business memory saved but related case checkpoint failed; atomic backup remains available.");
+            }
         }
     }
 
@@ -351,6 +420,7 @@ void Runtime::tickOneHz() {
 }
 
 void Runtime::handleDebugHotkeys() {
+    const bool f4Down = keyDown(VK_F4);
     const bool f5Down = keyDown(VK_F5);
     const bool f6Down = keyDown(VK_F6);
     const bool f7Down = keyDown(VK_F7);
@@ -359,6 +429,9 @@ void Runtime::handleDebugHotkeys() {
     const bool f10Down = keyDown(VK_F10);
     const bool f11Down = keyDown(VK_F11);
 
+    if (f4Down && !f4WasDown_) {
+        debugCommands_.execute("store.survey");
+    }
     if (f5Down && !f5WasDown_) {
         debugCommands_.execute("crime.inspect");
     }
@@ -381,6 +454,7 @@ void Runtime::handleDebugHotkeys() {
         debugCommands_.execute("validate_save");
     }
 
+    f4WasDown_ = f4Down;
     f5WasDown_ = f5Down;
     f6WasDown_ = f6Down;
     f7WasDown_ = f7Down;
@@ -392,10 +466,15 @@ void Runtime::handleDebugHotkeys() {
 
 void Runtime::renderDebugOverlay() {
     std::ostringstream text;
-    text << "GCO Stage 2 | " << BuildInfo::Version
+    text << "GCO Stage 3 | " << BuildInfo::Version
          << " | " << compatibilityLevelName(missionGate_.level())
          << " | Wanted " << platform_.world.wantedLevel()
          << " | Cases " << crimeRegistry_.caseCount();
+
+    if (config_.robberySystem && storeRuntime_.initialized()) {
+        text << " | Store " << (storeRuntime_.targetReady() ? "READY" : "RESEARCH")
+             << (storeRuntime_.detailedActive() ? "/ACTIVE" : "/ABSTRACT");
+    }
 
     if (!missionGate_.gameplayAllowed()) {
         text << " | world sampling paused";
@@ -408,6 +487,10 @@ void Runtime::renderDebugOverlay() {
         text << " | Interview demo " << investigationDemoTurnIndex_ << '/' << investigationDemoPlan_.size();
     }
     platform_.ui.helpText(text.str(), false);
+
+    if (config_.robberySystem) {
+        storeRuntime_.renderDebug();
+    }
 
     if (!playerSnapshot_ || !playerSnapshot_->alive) {
         return;
@@ -780,10 +863,14 @@ void Runtime::logDiagnostics() {
         << ", ownedProps=" << platform_.props.ownedCount()
         << ", cases=" << crimeRegistry_.caseCount()
         << ", crimes=" << crimeRegistry_.crimeCount()
+        << ", storeReady=" << (config_.robberySystem && storeRuntime_.targetReady() ? "true" : "false")
+        << ", storeDetailed=" << (config_.robberySystem && storeRuntime_.detailedActive() ? "true" : "false")
         << ", investigationDemoActive=" << (!investigationDemoPlan_.empty() ? "true" : "false")
         << ", schedulerTasks=" << scheduler_.recurringTaskCount()
         << ", queuedTasks=" << scheduler_.queuedTaskCount()
         << ", eventSubscribers=" << eventBus_.subscriberCount()
+        << ", nextBusinessSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Business)
+        << ", nextClerkSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Clerk)
         << ", nextCaseSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Case)
         << ", nextCrimeSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Crime)
         << ", nextVehicleSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Vehicle);
@@ -838,7 +925,22 @@ void Runtime::validateSaveDiagnostic() {
             return;
         }
     }
-    Logger::instance().info("Debug save validation PASS: world schema, logical IDs and Stage 2 case persistence are valid.");
+
+    if (config_.robberySystem && storeRuntime_.initialized()) {
+        LogicalIdGenerator ids;
+        if (!worldState_.loadLogicalIdState(ids, &reason)) {
+            Logger::instance().error("Debug save validation FAIL (store ID state): " + reason);
+            return;
+        }
+        robbery::PrototypeStoreModel store;
+        robbery::PrototypeStorePersistence persistence(paths_, worldState_);
+        if (!persistence.load(store, ids, persistentNowMs(), storeRuntime_.target().tuning, &reason)) {
+            Logger::instance().error("Debug save validation FAIL (prototype store): " + reason);
+            return;
+        }
+    }
+
+    Logger::instance().info("Debug save validation PASS: world schema, logical IDs, cases and prototype business/clerk persistence are valid.");
 }
 
 void Runtime::shutdown() {
@@ -849,6 +951,11 @@ void Runtime::shutdown() {
 
     eventBus_.publish(RuntimeEvent{"runtime.stopping", 0, {}});
     stopInvestigationDialogueDemo("runtime shutdown");
+
+    if (config_.robberySystem) {
+        storeRuntime_.shutdown(persistentNowMs());
+    }
+
     const std::size_t cleanedProps = platform_.cleanupOwnedResources();
     if (cleanedProps > 0) {
         Logger::instance().info("Platform cleanup deleted " + std::to_string(cleanedProps) + " tracked project-owned prop(s).");
