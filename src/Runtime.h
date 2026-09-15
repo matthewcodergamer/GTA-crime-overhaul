@@ -2,6 +2,9 @@
 
 #include "CoreServices.h"
 #include "Foundation.h"
+#include "crime/CrimeDebugInspector.h"
+#include "crime/CrimeDirector.h"
+#include "crime/CrimePersistence.h"
 #include "dialogue/InvestigationDialogue.h"
 #include "platform/AdapterDiagnostics.h"
 #include "platform/FacialAnimationAdapter.h"
@@ -34,6 +37,9 @@ private:
     void tickOneHz();
     void handleDebugHotkeys();
     void renderDebugOverlay();
+    void runSyntheticCrimeDiagnostic();
+    void logCaseInspector();
+    bool saveCrimeState(const char* context);
     void startInvestigationDialogueDemo();
     void tickInvestigationDialogueDemo(std::uint64_t nowMs);
     void stopInvestigationDialogueDemo(const char* reason);
@@ -56,8 +62,14 @@ private:
     MissionCompatibilityGate missionGate_;
     DebugCommandRegistry debugCommands_;
 
+    crime::CrimeRegistry crimeRegistry_;
+    crime::CrimePersistenceStore crimePersistence_;
+    crime::CrimeDirector crimeDirector_;
+
     std::atomic_bool stopRequested_{false};
     bool initialized_ = false;
+    bool f5WasDown_ = false;
+    bool f6WasDown_ = false;
     bool f7WasDown_ = false;
     bool f8WasDown_ = false;
     bool f9WasDown_ = false;

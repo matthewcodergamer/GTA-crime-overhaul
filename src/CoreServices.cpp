@@ -5,16 +5,19 @@
 
 namespace gco {
 namespace {
-constexpr std::size_t kLogicalIdDomainCount = 5;
+constexpr std::size_t kLogicalIdDomainCount = 6;
 }
 
 std::size_t LogicalIdGenerator::indexOf(const LogicalIdDomain domain) noexcept {
-    const auto raw = static_cast<std::uint8_t>(domain);
-    if (raw < static_cast<std::uint8_t>(LogicalIdDomain::Case)
-        || raw > static_cast<std::uint8_t>(LogicalIdDomain::LootContainer)) {
-        return kLogicalIdDomainCount;
+    switch (domain) {
+    case LogicalIdDomain::Case: return 0;
+    case LogicalIdDomain::Business: return 1;
+    case LogicalIdDomain::Clerk: return 2;
+    case LogicalIdDomain::Vehicle: return 3;
+    case LogicalIdDomain::LootContainer: return 4;
+    case LogicalIdDomain::Crime: return 5;
     }
-    return static_cast<std::size_t>(raw - 1U);
+    return kLogicalIdDomainCount;
 }
 
 LogicalId LogicalIdGenerator::next(const LogicalIdDomain domain) {
@@ -52,12 +55,8 @@ bool LogicalIdGenerator::setNextSequence(
 }
 
 std::uint64_t LogicalIdGenerator::nextSequence(const LogicalIdDomain domain) const noexcept {
-    const auto raw = static_cast<std::uint8_t>(domain);
-    if (raw < static_cast<std::uint8_t>(LogicalIdDomain::Case)
-        || raw > static_cast<std::uint8_t>(LogicalIdDomain::LootContainer)) {
-        return 0;
-    }
-    return nextSequences_[static_cast<std::size_t>(raw - 1U)];
+    const auto index = indexOf(domain);
+    return index < nextSequences_.size() ? nextSequences_[index] : 0;
 }
 
 EventBus::SubscriptionId EventBus::subscribe(std::string topic, Callback callback) {

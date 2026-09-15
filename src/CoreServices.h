@@ -39,7 +39,10 @@ enum class LogicalIdDomain : std::uint8_t {
     Business = 2,
     Clerk = 3,
     Vehicle = 4,
-    LootContainer = 5
+    LootContainer = 5,
+    // Added after Stage 0. Existing numeric domains are intentionally unchanged so persisted
+    // Case/Business/Clerk/Vehicle/Loot IDs remain backward compatible.
+    Crime = 6
 };
 
 constexpr std::uint64_t kLogicalIdSequenceMask = 0x00FFFFFFFFFFFFFFull;
@@ -67,7 +70,7 @@ public:
 
 private:
     static std::size_t indexOf(LogicalIdDomain domain) noexcept;
-    std::array<std::uint64_t, 5> nextSequences_{1, 1, 1, 1, 1};
+    std::array<std::uint64_t, 6> nextSequences_{1, 1, 1, 1, 1, 1};
 };
 
 struct RuntimeEvent final {

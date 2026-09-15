@@ -52,6 +52,19 @@ if(NOT SCRIPTHOOKV_LIBRARY)
     message(FATAL_ERROR "ScriptHookV.lib not found under ${SCRIPTHOOKV_SDK_DIR}/lib")
 endif()
 
+set(GCO_CRIME_SOURCES
+    src/crime/CrimeDomain.cpp
+    src/crime/CrimeDomain.h
+    src/crime/CrimeRegistry.cpp
+    src/crime/CrimeRegistry.h
+    src/crime/CrimeDirector.cpp
+    src/crime/CrimeDirector.h
+    src/crime/CrimePersistence.cpp
+    src/crime/CrimePersistence.h
+    src/crime/CrimeDebugInspector.cpp
+    src/crime/CrimeDebugInspector.h
+)
+
 add_library(GTA_Crime_Overhaul SHARED
     src/main.cpp
     src/Runtime.cpp
@@ -61,6 +74,7 @@ add_library(GTA_Crime_Overhaul SHARED
     src/Foundation.cpp
     src/Foundation.h
     src/IdStatePersistence.cpp
+    ${GCO_CRIME_SOURCES}
     src/dialogue/InvestigationDialogue.cpp
     src/dialogue/InvestigationDialogue.h
     src/dialogue/SpeakerPresentation.cpp
@@ -179,7 +193,54 @@ if(BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
 
-    foreach(test_target IN ITEMS GCO_PlatformTypesTests GCO_CoreServicesTests GCO_PersistenceTests GCO_InvestigationDialogueTests GCO_SpeakerPresentationTests)
+    add_executable(GCO_CrimeDomainTests
+        tests/CrimeDomainTests.cpp
+        src/crime/CrimeDomain.cpp
+        src/crime/CrimeRegistry.cpp
+        src/crime/CrimeDirector.cpp
+        src/crime/CrimeDebugInspector.cpp
+        src/CoreServices.cpp
+    )
+    target_include_directories(GCO_CrimeDomainTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_compile_definitions(GCO_CrimeDomainTests PRIVATE
+        GCO_VERSION="${PROJECT_VERSION}"
+        GCO_BUILD_CONFIG="$<CONFIG>"
+        GCO_GIT_SHA="${GCO_GIT_SHA}"
+    )
+
+    add_executable(GCO_CrimePersistenceTests
+        tests/CrimePersistenceTests.cpp
+        src/crime/CrimeDomain.cpp
+        src/crime/CrimeRegistry.cpp
+        src/crime/CrimeDirector.cpp
+        src/crime/CrimePersistence.cpp
+        src/Foundation.cpp
+        src/IdStatePersistence.cpp
+        src/CoreServices.cpp
+    )
+    target_include_directories(GCO_CrimePersistenceTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_compile_definitions(GCO_CrimePersistenceTests PRIVATE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+        UNICODE
+        _UNICODE
+        GCO_VERSION="${PROJECT_VERSION}"
+        GCO_BUILD_CONFIG="$<CONFIG>"
+        GCO_GIT_SHA="${GCO_GIT_SHA}"
+    )
+
+    foreach(test_target IN ITEMS
+        GCO_PlatformTypesTests
+        GCO_CoreServicesTests
+        GCO_PersistenceTests
+        GCO_InvestigationDialogueTests
+        GCO_SpeakerPresentationTests
+        GCO_CrimeDomainTests
+        GCO_CrimePersistenceTests)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE
                 /W4
@@ -195,6 +256,8 @@ if(BUILD_TESTING)
     add_test(NAME Persistence COMMAND GCO_PersistenceTests)
     add_test(NAME InvestigationDialogue COMMAND GCO_InvestigationDialogueTests)
     add_test(NAME SpeakerPresentation COMMAND GCO_SpeakerPresentationTests)
+    add_test(NAME CrimeDomain COMMAND GCO_CrimeDomainTests)
+    add_test(NAME CrimePersistence COMMAND GCO_CrimePersistenceTests)
 endif()
 
 install(TARGETS GTA_Crime_Overhaul

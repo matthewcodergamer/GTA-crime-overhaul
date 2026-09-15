@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include <main.h>
 
+#include <chrono>
 #include <cmath>
 #include <exception>
 #include <filesystem>
@@ -21,6 +22,11 @@ constexpr std::uint64_t kInvestigationDemoTurnDelayMs = 3000;
 
 std::uint64_t nowMs() {
     return static_cast<std::uint64_t>(GetTickCount64());
+}
+
+std::uint64_t persistentNowMs() {
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
 std::string persistenceStatusName(const PersistenceStatus status) {
@@ -67,7 +73,9 @@ Runtime::Runtime()
     : paths_(RuntimePaths::discover()),
       config_(RuntimeConfig::load(paths_.configFile)),
       worldState_(paths_),
-      adapterDiagnostics_(platform_) {}
+      adapterDiagnostics_(platform_),
+      crimePersistence_(paths_, worldState_),
+      crimeDirector_(crimeRegistry_, idGenerator_, eventBus_) {}
 
 Runtime::~Runtime() {
     shutdown();
@@ -113,6 +121,21 @@ bool Runtime::initialize() {
         return false;
     }
 
+    if (config_.persistentCases) {
+        std::string caseReason;
+        if (!crimePersistence_.load(crimeRegistry_, idGenerator_, &caseReason)) {
+            Logger::instance().error("Unable to restore persistent crime cases: " + caseReason);
+            return false;
+        }
+        Logger::instance().info(
+            "Crime persistence loaded: cases=" + std::to_string(crimeRegistry_.caseCount())
+            + ", crimes=" + std::to_string(crimeRegistry_.crimeCount())
+            + ", nextCase=" + std::to_string(idGenerator_.nextSequence(LogicalIdDomain::Case))
+            + ", nextCrime=" + std::to_string(idGenerator_.nextSequence(LogicalIdDomain::Crime)) + ".");
+    } else {
+        Logger::instance().warn("PersistentCases=false; case save/load is disabled for this session.");
+    }
+
     if (!config_.enabled) {
         Logger::instance().warn("Mod is disabled in configuration; runtime will remain idle except for lifecycle cleanup.");
     }
@@ -126,7 +149,7 @@ bool Runtime::initialize() {
 
     eventBus_.publish(RuntimeEvent{"runtime.started", 0, std::string(BuildInfo::Version)});
     Logger::instance().info("Native ASI runtime initialized successfully.");
-    Logger::instance().info("Debug hotkeys: F7=investigation dialogue overhear demo, F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
+    Logger::instance().info("Debug hotkeys: F5=case inspector, F6=synthetic Stage 2 case/save/reload test, F7=investigation dialogue demo, F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
     return true;
 }
 
@@ -158,6 +181,8 @@ void Runtime::configureDebugCommands() {
     });
     debugCommands_.registerCommand("dump_status", [this]() { logDiagnostics(); });
     debugCommands_.registerCommand("validate_save", [this]() { validateSaveDiagnostic(); });
+    debugCommands_.registerCommand("crime.inspect", [this]() { logCaseInspector(); });
+    debugCommands_.registerCommand("crime.synthetic", [this]() { runSyntheticCrimeDiagnostic(); });
     debugCommands_.registerCommand("dialogue.investigation_demo", [this]() {
         startInvestigationDialogueDemo();
     });
@@ -307,12 +332,18 @@ void Runtime::tickFiveHz() {
 }
 
 void Runtime::tickTwoHz() {
-    // Investigation dialogue composition is domain-owned. Scene spawning/interview orchestration
-    // remains a later police-system responsibility rather than being added to the GTA adapter layer.
+    // Stage 2 is event-driven domain state. Later dispatch/investigation/search planners own 2 Hz work.
 }
 
 void Runtime::tickOneHz() {
     const auto now = nowMs();
+    if (config_.persistentCases && missionGate_.persistenceAllowed()) {
+        const std::size_t decayed = crimeDirector_.applyDecay(persistentNowMs());
+        if (decayed > 0) {
+            saveCrimeState("case decay housekeeping");
+        }
+    }
+
     if (config_.debugLogging && now - lastHeartbeatMs_ >= 30000) {
         lastHeartbeatMs_ = now;
         logDiagnostics();
@@ -320,12 +351,20 @@ void Runtime::tickOneHz() {
 }
 
 void Runtime::handleDebugHotkeys() {
+    const bool f5Down = keyDown(VK_F5);
+    const bool f6Down = keyDown(VK_F6);
     const bool f7Down = keyDown(VK_F7);
     const bool f8Down = keyDown(VK_F8);
     const bool f9Down = keyDown(VK_F9);
     const bool f10Down = keyDown(VK_F10);
     const bool f11Down = keyDown(VK_F11);
 
+    if (f5Down && !f5WasDown_) {
+        debugCommands_.execute("crime.inspect");
+    }
+    if (f6Down && !f6WasDown_) {
+        debugCommands_.execute("crime.synthetic");
+    }
     if (f7Down && !f7WasDown_) {
         debugCommands_.execute("dialogue.investigation_demo");
     }
@@ -342,6 +381,8 @@ void Runtime::handleDebugHotkeys() {
         debugCommands_.execute("validate_save");
     }
 
+    f5WasDown_ = f5Down;
+    f6WasDown_ = f6Down;
     f7WasDown_ = f7Down;
     f8WasDown_ = f8Down;
     f9WasDown_ = f9Down;
@@ -351,9 +392,10 @@ void Runtime::handleDebugHotkeys() {
 
 void Runtime::renderDebugOverlay() {
     std::ostringstream text;
-    text << "GCO Stage 1 | " << BuildInfo::Version
+    text << "GCO Stage 2 | " << BuildInfo::Version
          << " | " << compatibilityLevelName(missionGate_.level())
-         << " | Wanted " << platform_.world.wantedLevel();
+         << " | Wanted " << platform_.world.wantedLevel()
+         << " | Cases " << crimeRegistry_.caseCount();
 
     if (!missionGate_.gameplayAllowed()) {
         text << " | world sampling paused";
@@ -381,6 +423,158 @@ void Runtime::renderDebugOverlay() {
         platform::Rgba{255, 255, 255, 160});
 }
 
+void Runtime::runSyntheticCrimeDiagnostic() {
+    if (!config_.persistentCases) {
+        Logger::instance().warn("Synthetic Stage 2 diagnostic requires PersistentCases=true.");
+        return;
+    }
+    if (!missionGate_.gameplayAllowed()) {
+        Logger::instance().warn("Synthetic Stage 2 diagnostic blocked by mission compatibility gate.");
+        return;
+    }
+
+    const auto player = platform_.world.playerPed();
+    const auto snapshot = platform_.world.snapshotPed(player);
+    if (!snapshot || !snapshot->alive) {
+        Logger::instance().warn("Synthetic Stage 2 diagnostic requires a live controllable player.");
+        return;
+    }
+
+    const std::uint64_t stamp = persistentNowMs();
+    const std::string incidentKey = "debug.synthetic." + std::to_string(stamp);
+    crime::CrimeOccurrence armed{};
+    armed.type = crime::CrimeType::ArmedRobbery;
+    armed.occurredAtMs = stamp;
+    armed.incidentKey = incidentKey;
+    armed.location = {snapshot->position.x, snapshot->position.y, snapshot->position.z, "debug_synthetic"};
+
+    const auto primary = crimeDirector_.recordCrime(armed);
+    if (primary.caseId == 0 || primary.crimeId == 0) {
+        Logger::instance().error("Synthetic Stage 2 diagnostic FAIL: could not allocate primary crime/case IDs.");
+        return;
+    }
+
+    auto related = armed;
+    related.type = crime::CrimeType::PropertyDamage;
+    related.occurredAtMs = stamp + 1;
+    const auto merged = crimeDirector_.recordCrime(related);
+    if (merged.caseId != primary.caseId || !merged.mergedIntoExistingCase) {
+        Logger::instance().error("Synthetic Stage 2 diagnostic FAIL: related crime did not merge into the same case.");
+        return;
+    }
+
+    crime::ImmediateResponseState immediate{};
+    immediate.active = true;
+    immediate.reportPending = true;
+    immediate.tacticalLevel = 2;
+    immediate.lastUpdatedAtMs = stamp + 2;
+    if (!crimeDirector_.setImmediateResponse(primary.caseId, immediate, stamp + 2)) {
+        Logger::instance().error("Synthetic Stage 2 diagnostic FAIL: immediate response state update failed.");
+        return;
+    }
+
+    crime::EvidenceRecord observed{};
+    observed.source = crime::EvidenceSource::SyntheticDebug;
+    observed.kind = crime::EvidenceKind::CrimeObserved;
+    observed.confidence = 0.60f;
+    observed.observedAtMs = stamp + 3;
+    observed.independenceKey = incidentKey + ".witnessA";
+    observed.dedupKey = incidentKey + ".observed";
+    observed.snapshot.descriptor = "synthetic witness observed armed robbery";
+    observed.snapshot.location = armed.location;
+
+    crime::EvidenceRecord vehicle{};
+    vehicle.source = crime::EvidenceSource::SyntheticDebug;
+    vehicle.kind = crime::EvidenceKind::Vehicle;
+    vehicle.confidence = 0.45f;
+    vehicle.observedAtMs = stamp + 4;
+    vehicle.independenceKey = incidentKey + ".witnessB";
+    vehicle.dedupKey = incidentKey + ".vehicle";
+    vehicle.snapshot.descriptor = "synthetic black coupe / partial plate 46E";
+    vehicle.snapshot.location = armed.location;
+
+    if (crimeDirector_.addEvidence(primary.caseId, std::move(observed)) != crime::EvidenceAddResult::Added
+        || crimeDirector_.addEvidence(primary.caseId, std::move(vehicle)) != crime::EvidenceAddResult::Added) {
+        Logger::instance().error("Synthetic Stage 2 diagnostic FAIL: evidence insertion failed.");
+        return;
+    }
+
+    const bool transitioned = crimeDirector_.beginReporting(primary.caseId, stamp + 5)
+        && crimeDirector_.markReported(primary.caseId, stamp + 6)
+        && crimeDirector_.beginInvestigation(primary.caseId, stamp + 7)
+        && crimeDirector_.markUnknownSuspect(primary.caseId, 0.30f, stamp + 8)
+        && crimeDirector_.issueBoloOrWarrant(primary.caseId, false, true, stamp + 9)
+        && crimeDirector_.beginPursuitOrSearch(primary.caseId, stamp + 10)
+        && crimeDirector_.markDormant(primary.caseId, stamp + 11);
+    if (!transitioned) {
+        Logger::instance().error("Synthetic Stage 2 diagnostic FAIL: canonical case transition sequence failed.");
+        return;
+    }
+
+    immediate.active = false;
+    immediate.reportPending = false;
+    immediate.pursuitActive = false;
+    immediate.lastUpdatedAtMs = stamp + 12;
+    if (!crimeDirector_.setImmediateResponse(primary.caseId, immediate, stamp + 12)) {
+        Logger::instance().error("Synthetic Stage 2 diagnostic FAIL: immediate-response cleanup failed.");
+        return;
+    }
+
+    if (!saveCrimeState("synthetic diagnostic")) {
+        return;
+    }
+
+    LogicalIdGenerator reloadedIds;
+    std::string reason;
+    if (!worldState_.loadLogicalIdState(reloadedIds, &reason)) {
+        Logger::instance().error("Synthetic Stage 2 diagnostic FAIL: base ID reload failed: " + reason);
+        return;
+    }
+    crime::CrimeRegistry reloadedRegistry;
+    if (!crimePersistence_.load(reloadedRegistry, reloadedIds, &reason)) {
+        Logger::instance().error("Synthetic Stage 2 diagnostic FAIL: case reload failed: " + reason);
+        return;
+    }
+
+    const crime::CaseFile* reloaded = reloadedRegistry.findCase(primary.caseId);
+    if (reloaded == nullptr
+        || reloaded->state != crime::CaseState::Dormant
+        || reloaded->crimeIds.size() != 2
+        || reloaded->evidence.size() != 2
+        || !reloaded->activeVehicleBolo) {
+        Logger::instance().error("Synthetic Stage 2 diagnostic FAIL: reloaded case did not preserve state/crimes/evidence/BOLO.");
+        return;
+    }
+
+    crimeRegistry_ = std::move(reloadedRegistry);
+    idGenerator_ = reloadedIds;
+    Logger::instance().info(
+        "Synthetic Stage 2 diagnostic PASS: created case=" + std::to_string(primary.caseId)
+        + ", merged crime=" + std::to_string(merged.crimeId)
+        + ", persisted/reloaded state=dormant with two evidence records and vehicle BOLO.");
+    platform_.ui.subtitle("GCO Stage 2 synthetic case PASS - see log / F5 inspector", 2600, true);
+    logCaseInspector();
+}
+
+void Runtime::logCaseInspector() {
+    Logger::instance().info("Stage 2 case inspector:\n" + crime::CrimeDebugInspector::formatRegistry(crimeRegistry_));
+}
+
+bool Runtime::saveCrimeState(const char* context) {
+    if (!config_.persistentCases) {
+        return true;
+    }
+    std::string reason;
+    if (!crimePersistence_.save(crimeRegistry_, idGenerator_, &reason)) {
+        Logger::instance().error(
+            std::string("Crime persistence save failed")
+            + (context != nullptr ? std::string(" during ") + context : std::string{})
+            + ": " + reason);
+        return false;
+    }
+    return true;
+}
+
 void Runtime::startInvestigationDialogueDemo() {
     if (!missionGate_.gameplayAllowed()) {
         Logger::instance().warn("Investigation dialogue demo blocked by mission compatibility gate.");
@@ -406,8 +600,8 @@ void Runtime::startInvestigationDialogueDemo() {
         if (ped == player || !platform_.world.pedExists(ped)) {
             continue;
         }
-        const auto snapshot = platform_.world.snapshotPed(ped);
-        if (!snapshot || !snapshot->alive || snapshot->isPlayer) {
+        const auto actorSnapshot = platform_.world.snapshotPed(ped);
+        if (!actorSnapshot || !actorSnapshot->alive || actorSnapshot->isPlayer) {
             continue;
         }
         const auto traits = pedPresentation_.classify(ped);
@@ -449,8 +643,6 @@ void Runtime::startInvestigationDialogueDemo() {
         facts,
         dialogue::InterviewOptions{4, static_cast<std::uint32_t>(frameCount_), true, true, true});
 
-    // Ambient debug actors have no persistent logical age profile, so age defaults to Adult.
-    // Production clerks/witnesses get ageBand from their logical profile; we never infer age from a GTA model.
     investigationDemoPlan_.officerProfile = dialogue::SpeakerPresentationProfile{
         "debug.investigating_officer",
         dialogueVoiceGender(actorTraits[0].voiceGender),
@@ -523,9 +715,6 @@ void Runtime::tickInvestigationDialogueDemo(const std::uint64_t now) {
         speaker,
         platform::LineOfSightProfile::DefaultVisibility);
 
-    // The demo uses distance as the hard audibility gate and logs LOS separately. Production
-    // spatial audio should use soft occlusion rather than making one reference-only LOS bitmask
-    // decide whether a human voice can pass through a doorway/counter/window.
     const bool audible = dialogue::canOverhear(
         dialogue::OverhearSample{distance, clearLos},
         dialogue::OverhearPolicy{kInvestigationDemoHearRadius, false});
@@ -558,7 +747,6 @@ void Runtime::tickInvestigationDialogueDemo(const std::uint64_t now) {
     ++investigationDemoTurnIndex_;
     investigationDemoNextTurnMs_ = now + kInvestigationDemoTurnDelayMs;
     if (investigationDemoTurnIndex_ >= investigationDemoPlan_.turns.size()) {
-        // Leave one turn interval before clearing so the last subtitle remains readable.
         investigationDemoNextTurnMs_ = now + kInvestigationDemoTurnDelayMs;
     }
 }
@@ -590,11 +778,14 @@ void Runtime::logDiagnostics() {
         << ", nearbyPeds=" << nearbyPedCount_
         << ", nearbyVehicles=" << nearbyVehicleCount_
         << ", ownedProps=" << platform_.props.ownedCount()
+        << ", cases=" << crimeRegistry_.caseCount()
+        << ", crimes=" << crimeRegistry_.crimeCount()
         << ", investigationDemoActive=" << (!investigationDemoPlan_.empty() ? "true" : "false")
         << ", schedulerTasks=" << scheduler_.recurringTaskCount()
         << ", queuedTasks=" << scheduler_.queuedTaskCount()
         << ", eventSubscribers=" << eventBus_.subscriberCount()
         << ", nextCaseSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Case)
+        << ", nextCrimeSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Crime)
         << ", nextVehicleSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Vehicle);
     Logger::instance().debug(out.str());
 }
@@ -629,11 +820,25 @@ void Runtime::logAdapterProbeReport(
 
 void Runtime::validateSaveDiagnostic() {
     std::string reason;
-    if (worldState_.validateFile(paths_.worldSave, &reason)) {
-        Logger::instance().info("Debug save validation PASS: schema and persistence invariants are valid.");
-    } else {
+    const bool worldValid = worldState_.validateFile(paths_.worldSave, &reason);
+    if (!worldValid) {
         Logger::instance().error("Debug save validation FAIL: " + reason);
+        return;
     }
+
+    if (config_.persistentCases) {
+        LogicalIdGenerator ids;
+        if (!worldState_.loadLogicalIdState(ids, &reason)) {
+            Logger::instance().error("Debug save validation FAIL (ID state): " + reason);
+            return;
+        }
+        crime::CrimeRegistry cases;
+        if (!crimePersistence_.load(cases, ids, &reason)) {
+            Logger::instance().error("Debug save validation FAIL (cases): " + reason);
+            return;
+        }
+    }
+    Logger::instance().info("Debug save validation PASS: world schema, logical IDs and Stage 2 case persistence are valid.");
 }
 
 void Runtime::shutdown() {
@@ -647,6 +852,10 @@ void Runtime::shutdown() {
     const std::size_t cleanedProps = platform_.cleanupOwnedResources();
     if (cleanedProps > 0) {
         Logger::instance().info("Platform cleanup deleted " + std::to_string(cleanedProps) + " tracked project-owned prop(s).");
+    }
+
+    if (!saveCrimeState("runtime shutdown")) {
+        Logger::instance().warn("Runtime is shutting down after a failed case save; previous atomic primary/backup remains authoritative.");
     }
 
     scheduler_.clear();
