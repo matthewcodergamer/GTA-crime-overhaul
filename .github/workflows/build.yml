@@ -20,7 +20,9 @@ jobs:
       - name: Validate dialogue data
         shell: pwsh
         run: |
-          python tools/validate_dialogue.py --root data/dialogue --simulate 1 --seed 1337
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python tools/validate_dialogue.py --root data/dialogue --simulate 120 --seed 1337
           python tools/simulate_dialogue.py --root data/dialogue --encounters 120 --seed 1337
 
       - name: Acquire ScriptHookV SDK
@@ -28,6 +30,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $sdkRoot = Join-Path $env:RUNNER_TEMP 'ScriptHookV_SDK'
           New-Item -ItemType Directory -Force -Path $sdkRoot | Out-Null
 
@@ -87,22 +90,29 @@ jobs:
       - name: Configure CMake x64
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           cmake -S . -B build -A x64 -DBUILD_TESTING=ON -DSCRIPTHOOKV_SDK_DIR="$env:SCRIPTHOOKV_SDK_DIR"
 
       - name: Build Release ASI and tests
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           cmake --build build --config Release --parallel
 
       - name: Run unit tests
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           ctest --test-dir build -C Release --output-on-failure
 
       - name: Locate ASI
         id: locate
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $asi = Get-ChildItem -Path build -Recurse -File -Filter 'GTA_Crime_Overhaul.asi' | Select-Object -First 1
           if (-not $asi) {
             throw 'GTA_Crime_Overhaul.asi was not produced.'
