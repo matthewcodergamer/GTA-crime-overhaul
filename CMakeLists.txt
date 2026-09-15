@@ -103,9 +103,19 @@ set(GCO_VEHICLE_SOURCES
     src/vehicle/VehicleIdentityDirector.h
 )
 
+set(GCO_INVESTIGATION_SOURCES
+    src/investigation/InvestigationDomain.cpp
+    src/investigation/InvestigationDomain.h
+    src/investigation/DispatchDirector.cpp
+    src/investigation/DispatchDirector.h
+    src/investigation/InvestigationDirector.cpp
+    src/investigation/InvestigationDirector.h
+)
+
 add_library(GTA_Crime_Overhaul SHARED
     src/main.cpp
     src/Runtime.cpp
+    src/RuntimeStage7.cpp
     src/Runtime.h
     src/CoreServices.cpp
     src/CoreServices.h
@@ -117,6 +127,7 @@ add_library(GTA_Crime_Overhaul SHARED
     ${GCO_WITNESS_SOURCES}
     ${GCO_IDENTITY_SOURCES}
     ${GCO_VEHICLE_SOURCES}
+    ${GCO_INVESTIGATION_SOURCES}
     src/dialogue/InvestigationDialogue.cpp
     src/dialogue/InvestigationDialogue.h
     src/dialogue/SpeakerPresentation.cpp
@@ -137,6 +148,8 @@ add_library(GTA_Crime_Overhaul SHARED
     src/platform/WitnessPerceptionAdapter.h
     src/platform/VehicleIdentityAdapter.cpp
     src/platform/VehicleIdentityAdapter.h
+    src/platform/PoliceInvestigationAdapter.cpp
+    src/platform/PoliceInvestigationAdapter.h
 )
 
 target_include_directories(GTA_Crime_Overhaul PRIVATE
@@ -339,6 +352,29 @@ if(BUILD_TESTING)
         GCO_GIT_SHA="${GCO_GIT_SHA}"
     )
 
+    add_executable(GCO_InvestigationDomainTests
+        tests/InvestigationDomainTests.cpp
+        src/investigation/InvestigationDomain.cpp
+        src/crime/CrimeDomain.cpp
+    )
+    target_include_directories(GCO_InvestigationDomainTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+    add_executable(GCO_DispatchDirectorTests
+        tests/DispatchDirectorTests.cpp
+        src/investigation/InvestigationDomain.cpp
+        src/investigation/DispatchDirector.cpp
+        src/crime/CrimeDomain.cpp
+        src/crime/CrimeRegistry.cpp
+        src/crime/CrimeDirector.cpp
+        src/CoreServices.cpp
+    )
+    target_include_directories(GCO_DispatchDirectorTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(GCO_DispatchDirectorTests PRIVATE
+        GCO_VERSION="${PROJECT_VERSION}"
+        GCO_BUILD_CONFIG="$<CONFIG>"
+        GCO_GIT_SHA="${GCO_GIT_SHA}"
+    )
+
     foreach(test_target IN ITEMS
         GCO_PlatformTypesTests
         GCO_CoreServicesTests
@@ -352,7 +388,9 @@ if(BUILD_TESTING)
         GCO_StorePersistenceTests
         GCO_WitnessDomainTests
         GCO_IdentitySystemTests
-        GCO_VehicleIdentityTests)
+        GCO_VehicleIdentityTests
+        GCO_InvestigationDomainTests
+        GCO_DispatchDirectorTests)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE /W4 /permissive- /EHsc /utf-8)
         endif()
@@ -371,6 +409,8 @@ if(BUILD_TESTING)
     add_test(NAME WitnessDomain COMMAND GCO_WitnessDomainTests)
     add_test(NAME IdentitySystem COMMAND GCO_IdentitySystemTests)
     add_test(NAME VehicleIdentity COMMAND GCO_VehicleIdentityTests)
+    add_test(NAME InvestigationDomain COMMAND GCO_InvestigationDomainTests)
+    add_test(NAME DispatchDirector COMMAND GCO_DispatchDirectorTests)
 endif()
 
 install(TARGETS GTA_Crime_Overhaul

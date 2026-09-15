@@ -12,7 +12,7 @@ std::atomic<gco::Runtime*> g_runtime{nullptr};
 void ScriptMain() {
     gco::Runtime runtime;
     g_runtime.store(&runtime, std::memory_order_release);
-    runtime.run();
+    runtime.runStage7Integrated();
     g_runtime.store(nullptr, std::memory_order_release);
 }
 } // namespace

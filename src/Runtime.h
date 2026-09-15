@@ -8,16 +8,20 @@
 #include "dialogue/InvestigationDialogue.h"
 #include "identity/ClerkRecognitionDirector.h"
 #include "identity/IdentitySystem.h"
+#include "investigation/DispatchDirector.h"
+#include "investigation/InvestigationDirector.h"
 #include "platform/AdapterDiagnostics.h"
 #include "platform/FacialAnimationAdapter.h"
 #include "platform/PedPresentationAdapter.h"
 #include "platform/PlatformAdapters.h"
+#include "platform/PoliceInvestigationAdapter.h"
 #include "robbery/StoreRuntime.h"
 #include "witness/WitnessDirector.h"
 
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 
 namespace gco {
@@ -28,6 +32,7 @@ public:
     ~Runtime();
 
     void run();
+    void runStage7Integrated();
     void requestStop() noexcept;
 
 private:
@@ -73,6 +78,10 @@ private:
     robbery::PrototypeStoreRuntime storeRuntime_;
     identity::ClerkRecognitionDirector clerkRecognitionDirector_;
     witness::WitnessDirector witnessDirector_;
+
+    std::unique_ptr<platform::NativePoliceInvestigationAdapter> policeInvestigationAdapter_;
+    std::unique_ptr<investigation::DispatchDirector> dispatchDirector_;
+    std::unique_ptr<investigation::InvestigationDirector> investigationDirector_;
 
     std::atomic_bool stopRequested_{false};
     bool initialized_ = false;
