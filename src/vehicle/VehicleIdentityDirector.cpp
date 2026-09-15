@@ -46,6 +46,7 @@ void VehicleIdentityDirector::shutdown() {
     activeCaseId_ = 0;
     currentVehicleId_.reset();
     currentHandle_ = 0;
+    lastTickNowMs_ = 0;
     identity_.clearLiveBindings();
     initialized_ = false;
 }
@@ -72,11 +73,12 @@ void VehicleIdentityDirector::onObservedSwap(const RuntimeEvent& event) {
     const auto caseId = payloadId(event.payload, "caseId");
     const auto newVehicleId = payloadId(event.payload, "newVehicleId");
     if (!caseId || !newVehicleId || logicalIdDomain(*newVehicleId) != LogicalIdDomain::Vehicle) return;
-    const auto result = identity_.recordVehicleSwap(*caseId, currentVehicleId_, *newVehicleId, true, event.timestampMs);
+    const auto result = identity_.recordVehicleSwap(*caseId, currentVehicleId_, *newVehicleId, true, lastTickNowMs_);
     if (result.continuityPreserved) persistenceDirty_ = true;
 }
 
 void VehicleIdentityDirector::tickFiveHz(const std::uint64_t nowMs, const bool gameplayAllowed) {
+    lastTickNowMs_ = nowMs;
     if (!initialized_ || !gameplayAllowed) return;
 
     if (activeCaseId_ != 0) {
