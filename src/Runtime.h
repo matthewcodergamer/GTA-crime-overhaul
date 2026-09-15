@@ -1,8 +1,10 @@
 #pragma once
 
+#include "CoreServices.h"
 #include "Foundation.h"
 #include "platform/PlatformAdapters.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -15,14 +17,21 @@ public:
     ~Runtime();
 
     void run();
+    void requestStop() noexcept;
 
 private:
     bool initialize();
+    void configureScheduler();
+    void configureDebugCommands();
     void tick();
+    void tickFrame();
     void tickFiveHz();
     void tickTwoHz();
     void tickOneHz();
+    void handleDebugHotkeys();
     void renderDebugOverlay();
+    void logDiagnostics();
+    void validateSaveDiagnostic();
     void shutdown();
 
     RuntimePaths paths_;
@@ -30,12 +39,18 @@ private:
     WorldStateStore worldState_;
     platform::PlatformServices platform_;
 
+    Scheduler scheduler_;
+    EventBus eventBus_;
+    LogicalIdGenerator idGenerator_;
+    MissionCompatibilityGate missionGate_;
+    DebugCommandRegistry debugCommands_;
+
+    std::atomic_bool stopRequested_{false};
     bool initialized_ = false;
-    bool missionSuspended_ = false;
+    bool f9WasDown_ = false;
+    bool f10WasDown_ = false;
+    bool f11WasDown_ = false;
     std::uint64_t frameCount_ = 0;
-    std::uint64_t lastFiveHzMs_ = 0;
-    std::uint64_t lastTwoHzMs_ = 0;
-    std::uint64_t lastOneHzMs_ = 0;
     std::uint64_t lastHeartbeatMs_ = 0;
 
     platform::MissionState missionState_{};
