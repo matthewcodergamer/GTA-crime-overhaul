@@ -93,6 +93,7 @@ public:
     bool writeEmptyWorldAtomically();
     bool writeWorldAtomically(const std::string& document);
     bool validateFile(const std::filesystem::path& file, std::string* reason = nullptr) const;
+    bool loadLogicalIdState(LogicalIdGenerator& generator, std::string* reason = nullptr) const;
     [[nodiscard]] std::string emptyWorldJson() const;
 
 private:
