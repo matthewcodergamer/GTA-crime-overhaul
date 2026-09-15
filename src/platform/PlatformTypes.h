@@ -67,14 +67,6 @@ struct PedPropVariation final {
     int texture = 0;
 };
 
-enum class PedGender : std::uint8_t {
-    Unknown,
-    Masculine,
-    Feminine
-};
-
-std::string_view pedGenderName(PedGender gender) noexcept;
-
 struct PedSnapshot final {
     std::uint32_t modelHash = 0;
     Vec3 position{};
@@ -82,8 +74,6 @@ struct PedSnapshot final {
     bool alive = false;
     bool ragdoll = false;
     bool isPlayer = false;
-    bool isHuman = false;
-    PedGender gender = PedGender::Unknown;
     std::array<PedComponentVariation, 12> components{};
     std::array<PedPropVariation, 8> props{};
 };
