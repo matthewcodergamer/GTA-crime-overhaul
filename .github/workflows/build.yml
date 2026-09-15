@@ -24,6 +24,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           python tools/validate_dialogue.py --root data/dialogue --simulate 120 --seed 1337
           python tools/simulate_dialogue.py --root data/dialogue --encounters 120 --seed 1337
+          python tools/validate_personas.py
 
       - name: Acquire ScriptHookV SDK
         id: sdk
