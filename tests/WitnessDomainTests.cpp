@@ -28,6 +28,8 @@ void testHearingDoesNotCreateVisualIdentity() {
     sample.heardGunshot = true;
     sample.hearingStrength = 0.7f;
     sample.faceCover = FaceCoverKnowledge::FaceVisible;
+    sample.faceCaptureAllowed = true;
+    sample.characterIdentity = gco::identity::CharacterIdentity::Franklin;
     sample.outfitSignature = "should_not_leak";
     sample.weaponVisible = true;
     sample.weaponClass = WeaponClass::Handgun;
@@ -40,6 +42,7 @@ void testHearingDoesNotCreateVisualIdentity() {
     expect(observation.heardThreat && observation.heardGunshot, "hearing can create awareness");
     expect(!observation.sawCrime, "hearing alone does not become visual observation");
     expect(!observation.faceCover.observed, "hearing alone cannot reveal face/mask");
+    expect(!observation.faceIdentity.observed, "hearing alone cannot identify the player");
     expect(!observation.outfit.observed, "hearing alone cannot reveal outfit");
     expect(!observation.weapon.observed, "hearing alone cannot reveal weapon class");
     expect(!observation.vehicle.observed, "hearing alone cannot reveal vehicle");
@@ -64,6 +67,8 @@ void testTwoWitnessesProduceDifferentReports() {
     front.hearingStrength = 0.9f;
     front.faceViewQuality = 0.95f;
     front.faceCover = FaceCoverKnowledge::FaceVisible;
+    front.faceCaptureAllowed = true;
+    front.characterIdentity = gco::identity::CharacterIdentity::Franklin;
     front.outfitSignature = "MODEL:shirt.jacket.pants";
     front.weaponVisible = true;
     front.weaponClass = WeaponClass::Handgun;
@@ -84,6 +89,9 @@ void testTwoWitnessesProduceDifferentReports() {
     expect(frontWitness.sawCrime, "front witness visually observes the crime");
     expect(frontWitness.faceCover.observed && frontWitness.faceCover.value == FaceCoverKnowledge::FaceVisible,
         "front witness gets face observation after enough quality/time");
+    expect(frontWitness.faceIdentity.observed
+        && frontWitness.faceIdentity.value == gco::identity::CharacterIdentity::Franklin,
+        "front witness can capture identity only from supported face view");
     expect(frontWitness.outfit.observed, "front witness records outfit");
     expect(frontWitness.weapon.observed && frontWitness.weapon.value == WeaponClass::Handgun,
         "front witness records visible weapon class");
@@ -92,9 +100,50 @@ void testTwoWitnessesProduceDifferentReports() {
     expect(backRoomWitness.heardThreat, "second witness hears same crime");
     expect(!backRoomWitness.sawCrime, "second witness does not visually observe same crime");
     expect(!backRoomWitness.faceCover.observed, "second witness cannot report face");
+    expect(!backRoomWitness.faceIdentity.observed, "second witness cannot identify the player");
     expect(!backRoomWitness.outfit.observed, "second witness cannot report outfit");
     expect(!backRoomWitness.weapon.observed, "second witness cannot report weapon class");
     expect(frontWitness.meaningful() && backRoomWitness.meaningful(), "both reports are meaningful but materially different");
+}
+
+void testLaterMaskDoesNotEraseEarlierFaceIdentity() {
+    using namespace gco::witness;
+    WitnessObservation observation{};
+
+    PerceptionSample clear{};
+    clear.distance = 4.0f;
+    clear.inFov = true;
+    clear.clearLos = true;
+    clear.fovQuality = 1.0f;
+    clear.lightingFactor = 1.0f;
+    clear.visualDeltaMs = 700;
+    clear.faceViewQuality = 1.0f;
+    clear.faceCover = FaceCoverKnowledge::FaceVisible;
+    clear.faceCaptureAllowed = true;
+    clear.characterIdentity = gco::identity::CharacterIdentity::Franklin;
+    clear.outfitSignature = "outfit_a";
+    applyPerceptionSample(observation, clear, 1000);
+    expect(observation.faceIdentity.observed, "pre-mask face is captured");
+    const float originalConfidence = observation.faceIdentity.confidence;
+
+    PerceptionSample covered = clear;
+    covered.visualDeltaMs = 500;
+    covered.faceCover = FaceCoverKnowledge::FaceCovered;
+    covered.faceCaptureAllowed = false;
+    covered.characterIdentity = gco::identity::CharacterIdentity::Franklin;
+    covered.outfitSignature = "outfit_b";
+    applyPerceptionSample(observation, covered, 1600);
+
+    expect(observation.faceIdentity.observed
+        && observation.faceIdentity.value == gco::identity::CharacterIdentity::Franklin,
+        "putting on a mask later does not erase earlier face identity");
+    expect(observation.faceIdentity.confidence == originalConfidence,
+        "later mask cannot overwrite historical face confidence");
+    expect(observation.faceCover.observed
+        && observation.faceCover.value == FaceCoverKnowledge::FaceCovered,
+        "witness can separately remember later face covering");
+    expect(observation.outfit.observed && observation.outfit.value == "outfit_b",
+        "clothing remains observable while face is covered");
 }
 
 void testPlateRequiresGeometryAndViewTime() {
@@ -167,6 +216,7 @@ void testConfidenceNeedsFovLosDistanceAndTime() {
 int main() {
     testHearingDoesNotCreateVisualIdentity();
     testTwoWitnessesProduceDifferentReports();
+    testLaterMaskDoesNotEraseEarlierFaceIdentity();
     testPlateRequiresGeometryAndViewTime();
     testStaggeredScanBudget();
     testReportingDelayPartialAndInterruption();
