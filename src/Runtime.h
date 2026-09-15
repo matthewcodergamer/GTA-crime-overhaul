@@ -6,6 +6,8 @@
 #include "crime/CrimeDirector.h"
 #include "crime/CrimePersistence.h"
 #include "dialogue/InvestigationDialogue.h"
+#include "identity/ClerkRecognitionDirector.h"
+#include "identity/IdentitySystem.h"
 #include "platform/AdapterDiagnostics.h"
 #include "platform/FacialAnimationAdapter.h"
 #include "platform/PedPresentationAdapter.h"
@@ -67,7 +69,9 @@ private:
     crime::CrimeRegistry crimeRegistry_;
     crime::CrimePersistenceStore crimePersistence_;
     crime::CrimeDirector crimeDirector_;
+    identity::IdentitySystem identitySystem_;
     robbery::PrototypeStoreRuntime storeRuntime_;
+    identity::ClerkRecognitionDirector clerkRecognitionDirector_;
     witness::WitnessDirector witnessDirector_;
 
     std::atomic_bool stopRequested_{false};
