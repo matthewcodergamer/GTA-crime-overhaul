@@ -31,18 +31,19 @@ jobs:
           $sdkRoot = Join-Path $env:RUNNER_TEMP 'ScriptHookV_SDK'
           New-Item -ItemType Directory -Force -Path $sdkRoot | Out-Null
 
+          # This is the SDK URL currently linked by Alexander Blade's official Script Hook V page.
           $officialUrl = 'https://dev-c.com/files/ScriptHookV_SDK_1.0.617.1a.zip'
           $zip = Join-Path $env:RUNNER_TEMP 'ScriptHookV_SDK.zip'
-          $officialSucceeded = $false
+          $sdkProvenance = $null
 
           try {
             Write-Host "Attempting official Script Hook V developer SDK download..."
             Invoke-WebRequest -Uri $officialUrl -OutFile $zip -MaximumRedirection 10 -Headers @{ 'User-Agent' = 'Mozilla/5.0 GitHub-Actions GTA-Crime-Overhaul' }
             Expand-Archive -Path $zip -DestinationPath $sdkRoot -Force
-            $officialSucceeded = $true
+            $sdkProvenance = "official:$officialUrl"
           }
           catch {
-            Write-Warning "Official developer download was unavailable to CI: $($_.Exception.Message)"
+            Write-Warning "Official developer SDK endpoint was unavailable to CI: $($_.Exception.Message)"
           }
 
           $mainHeader = Get-ChildItem -Path $sdkRoot -Recurse -File -Filter 'main.h' -ErrorAction SilentlyContinue |
@@ -53,18 +54,24 @@ jobs:
             Select-Object -First 1
 
           if (-not $mainHeader -or -not $importLib) {
-            Write-Warning 'Official SDK layout was not available; using an ephemeral public SDK mirror for build headers/import library only.'
+            # The official SDK link currently redirects/fails on some CI requests. Keep the build
+            # reproducible by pinning the already-used public SDK mirror to an exact immutable commit.
             $mirrorRoot = Join-Path $env:RUNNER_TEMP 'scripthookv_template'
-            git clone --depth 1 https://github.com/usrbinbryce/scripthookv_template.git $mirrorRoot
+            $mirrorRepo = 'https://github.com/usrbinbryce/scripthookv_template.git'
+            $mirrorCommit = 'e4aac2ee93bde6469ca56e209400f60b4ca02013'
+            Write-Warning "Using pinned SDK mirror fallback at commit $mirrorCommit for build headers/import library only."
+            git clone --no-checkout $mirrorRepo $mirrorRoot
+            git -C $mirrorRoot checkout --detach $mirrorCommit
             $candidate = Join-Path $mirrorRoot 'extern\scripthookv'
 
             if (-not (Test-Path (Join-Path $candidate 'inc\main.h'))) {
-              throw 'Fallback SDK mirror does not contain inc/main.h.'
+              throw 'Pinned fallback SDK mirror does not contain inc/main.h.'
             }
             if (-not (Test-Path (Join-Path $candidate 'lib\ScriptHookV.lib'))) {
-              throw 'Fallback SDK mirror does not contain lib/ScriptHookV.lib.'
+              throw 'Pinned fallback SDK mirror does not contain lib/ScriptHookV.lib.'
             }
             $resolvedSdk = $candidate
+            $sdkProvenance = "pinned-mirror:$mirrorRepo@$mirrorCommit"
           }
           else {
             $incDir = $mainHeader.Directory.FullName
@@ -72,10 +79,12 @@ jobs:
           }
 
           Write-Host "Resolved SDK: $resolvedSdk"
+          Write-Host "SDK provenance: $sdkProvenance"
           "sdk_dir=$resolvedSdk" >> $env:GITHUB_OUTPUT
+          "sdk_provenance=$sdkProvenance" >> $env:GITHUB_OUTPUT
           "SCRIPTHOOKV_SDK_DIR=$resolvedSdk" >> $env:GITHUB_ENV
 
-      - name: Configure CMake
+      - name: Configure CMake x64
         shell: pwsh
         run: |
           cmake -S . -B build -A x64 -DBUILD_TESTING=ON -DSCRIPTHOOKV_SDK_DIR="$env:SCRIPTHOOKV_SDK_DIR"
@@ -98,14 +107,19 @@ jobs:
           if (-not $asi) {
             throw 'GTA_Crime_Overhaul.asi was not produced.'
           }
+          if ($asi.Extension -ne '.asi') {
+            throw "Unexpected native output extension: $($asi.Extension)"
+          }
           Write-Host "ASI: $($asi.FullName)"
           "asi=$($asi.FullName)" >> $env:GITHUB_OUTPUT
 
       - name: Stage release package
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $stage = Join-Path $pwd 'release-stage'
           $mod = Join-Path $stage 'GTA_Crime_Overhaul'
+          Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $mod | Out-Null
           New-Item -ItemType Directory -Force -Path (Join-Path $mod 'data') | Out-Null
 
@@ -121,7 +135,45 @@ jobs:
           Story Mode / offline only.
           '@ | Set-Content -Encoding UTF8 (Join-Path $stage 'REQUIRES_SCRIPTHOOKV.txt')
 
+          @"
+          GTA Crime Overhaul build
+          Repository commit: $env:GITHUB_SHA
+          Configuration: Release x64
+          SDK provenance: ${{ steps.sdk.outputs.sdk_provenance }}
+          Runtime dependencies are intentionally not packaged.
+          "@ | Set-Content -Encoding UTF8 (Join-Path $stage 'BUILD_INFO.txt')
+
+          $forbiddenNames = @('ScriptHookV.dll', 'dinput8.dll', 'GTA5.exe', 'NativeTrainer.asi')
+          $forbidden = Get-ChildItem $stage -Recurse -File | Where-Object { $forbiddenNames -contains $_.Name }
+          if ($forbidden) {
+            throw "Forbidden runtime/game files found in release stage: $($forbidden.FullName -join ', ')"
+          }
+
+          $topLevel = Get-ChildItem $stage | Select-Object -ExpandProperty Name
+          if ('GTA_Crime_Overhaul.asi' -notin $topLevel -or 'GTA_Crime_Overhaul' -notin $topLevel) {
+            throw 'Release package does not match GTA root installation layout.'
+          }
+
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath 'GTA-Crime-Overhaul.zip' -Force
+
+      - name: Verify release ZIP contents
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $verify = Join-Path $env:RUNNER_TEMP 'gco-release-verify'
+          Remove-Item $verify -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive 'GTA-Crime-Overhaul.zip' $verify -Force
+          $forbiddenNames = @('ScriptHookV.dll', 'dinput8.dll', 'GTA5.exe', 'NativeTrainer.asi')
+          $forbidden = Get-ChildItem $verify -Recurse -File | Where-Object { $forbiddenNames -contains $_.Name }
+          if ($forbidden) {
+            throw "Forbidden files found in ZIP: $($forbidden.FullName -join ', ')"
+          }
+          if (-not (Test-Path (Join-Path $verify 'GTA_Crime_Overhaul.asi'))) {
+            throw 'ZIP is missing GTA_Crime_Overhaul.asi at GTA root level.'
+          }
+          if (-not (Test-Path (Join-Path $verify 'GTA_Crime_Overhaul\GTA_Crime_Overhaul.ini'))) {
+            throw 'ZIP is missing GTA_Crime_Overhaul/GTA_Crime_Overhaul.ini.'
+          }
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -130,5 +182,6 @@ jobs:
           path: |
             GTA-Crime-Overhaul.zip
             release-stage/GTA_Crime_Overhaul.asi
+            release-stage/BUILD_INFO.txt
           if-no-files-found: error
           retention-days: 14
