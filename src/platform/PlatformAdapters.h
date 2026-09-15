@@ -29,7 +29,10 @@ public:
     [[nodiscard]] virtual std::vector<VehicleHandle> nearbyVehicles(
         const Vec3& center, float radius, std::size_t maxResults) const = 0;
 
-    [[nodiscard]] virtual bool hasLineOfSight(EntityHandle from, EntityHandle to, int traceType) const = 0;
+    [[nodiscard]] virtual bool hasLineOfSight(
+        EntityHandle from,
+        EntityHandle to,
+        LineOfSightProfile profile = LineOfSightProfile::DefaultVisibility) const = 0;
     [[nodiscard]] virtual std::optional<PedSnapshot> snapshotPed(PedHandle ped) const = 0;
     [[nodiscard]] virtual std::optional<VehicleSnapshot> snapshotVehicle(
         VehicleHandle vehicle,
@@ -50,6 +53,12 @@ class IPropAttachmentAdapter {
 public:
     virtual ~IPropAttachmentAdapter() = default;
 
+    // Only project-created objects should be adopted. Adopted objects are deleted by
+    // cleanupOwned() on runtime shutdown if the owning gameplay system did not already delete them.
+    virtual bool adoptOwned(ObjectHandle object) = 0;
+    virtual bool releaseOwnership(ObjectHandle object) = 0;
+    [[nodiscard]] virtual std::size_t ownedCount() const noexcept = 0;
+
     virtual bool attach(
         ObjectHandle object,
         EntityHandle parent,
@@ -60,6 +69,7 @@ public:
         bool fixedRotation) = 0;
     virtual bool detach(ObjectHandle object, bool collision, bool dynamic) = 0;
     virtual void deleteOwned(ObjectHandle& object) = 0;
+    virtual std::size_t cleanupOwned() = 0;
 };
 
 class IInteriorDoorAdapter {
@@ -109,7 +119,7 @@ class IInputAdapter {
 public:
     virtual ~IInputAdapter() = default;
 
-    [[nodiscard]] virtual ControlBinding binding(InputAction action) const = 0;
+    // Gameplay code sees semantic actions only. GTA control IDs remain inside the native adapter.
     [[nodiscard]] virtual bool pressed(InputAction action) const = 0;
     [[nodiscard]] virtual bool justPressed(InputAction action) const = 0;
     [[nodiscard]] virtual bool justReleased(InputAction action) const = 0;
@@ -144,11 +154,14 @@ public:
         const Vec3& center, float radius, std::size_t maxResults) const override;
     [[nodiscard]] std::vector<VehicleHandle> nearbyVehicles(
         const Vec3& center, float radius, std::size_t maxResults) const override;
-    [[nodiscard]] bool hasLineOfSight(EntityHandle from, EntityHandle to, int traceType) const override;
+    [[nodiscard]] bool hasLineOfSight(
+        EntityHandle from,
+        EntityHandle to,
+        LineOfSightProfile profile) const override;
     [[nodiscard]] std::optional<PedSnapshot> snapshotPed(PedHandle ped) const override;
     [[nodiscard]] std::optional<VehicleSnapshot> snapshotVehicle(
         VehicleHandle vehicle,
-        std::optional<std::uint64_t> projectVehicleId) const override;
+        std::optional<std::uint64_t> projectVehicleId = std::nullopt) const override;
 };
 
 class NativeAnimationAdapter final : public IAnimationAdapter {
@@ -161,6 +174,9 @@ public:
 
 class NativePropAttachmentAdapter final : public IPropAttachmentAdapter {
 public:
+    bool adoptOwned(ObjectHandle object) override;
+    bool releaseOwnership(ObjectHandle object) override;
+    [[nodiscard]] std::size_t ownedCount() const noexcept override { return owned_.size(); }
     bool attach(
         ObjectHandle object,
         EntityHandle parent,
@@ -171,6 +187,10 @@ public:
         bool fixedRotation) override;
     bool detach(ObjectHandle object, bool collision, bool dynamic) override;
     void deleteOwned(ObjectHandle& object) override;
+    std::size_t cleanupOwned() override;
+
+private:
+    OwnedObjectTracker owned_;
 };
 
 class NativeInteriorDoorAdapter final : public IInteriorDoorAdapter {
@@ -208,7 +228,6 @@ public:
 
 class NativeInputAdapter final : public IInputAdapter {
 public:
-    [[nodiscard]] ControlBinding binding(InputAction action) const override;
     [[nodiscard]] bool pressed(InputAction action) const override;
     [[nodiscard]] bool justPressed(InputAction action) const override;
     [[nodiscard]] bool justReleased(InputAction action) const override;
@@ -237,6 +256,9 @@ public:
     NativeAudioAdapter audio;
     NativeInputAdapter input;
     NativeDebugDrawAdapter debugDraw;
+
+    // Best-effort cleanup of resources owned by the adapter layer. Safe to call repeatedly.
+    std::size_t cleanupOwnedResources();
 };
 
 } // namespace gco::platform

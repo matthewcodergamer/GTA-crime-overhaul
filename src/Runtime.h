@@ -2,6 +2,7 @@
 
 #include "CoreServices.h"
 #include "Foundation.h"
+#include "platform/AdapterDiagnostics.h"
 #include "platform/PlatformAdapters.h"
 
 #include <atomic>
@@ -31,6 +32,7 @@ private:
     void handleDebugHotkeys();
     void renderDebugOverlay();
     void logDiagnostics();
+    void logAdapterProbeReport(const platform::AdapterProbeReport& report, const char* commandName);
     void validateSaveDiagnostic();
     void shutdown();
 
@@ -38,6 +40,7 @@ private:
     RuntimeConfig config_;
     WorldStateStore worldState_;
     platform::PlatformServices platform_;
+    platform::AdapterDiagnostics adapterDiagnostics_;
 
     Scheduler scheduler_;
     EventBus eventBus_;
@@ -47,6 +50,7 @@ private:
 
     std::atomic_bool stopRequested_{false};
     bool initialized_ = false;
+    bool f8WasDown_ = false;
     bool f9WasDown_ = false;
     bool f10WasDown_ = false;
     bool f11WasDown_ = false;

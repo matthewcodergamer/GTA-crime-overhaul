@@ -47,7 +47,8 @@ bool keyDown(const int virtualKey) {
 Runtime::Runtime()
     : paths_(RuntimePaths::discover()),
       config_(RuntimeConfig::load(paths_.configFile)),
-      worldState_(paths_) {}
+      worldState_(paths_),
+      adapterDiagnostics_(platform_) {}
 
 Runtime::~Runtime() {
     shutdown();
@@ -106,7 +107,7 @@ bool Runtime::initialize() {
 
     eventBus_.publish(RuntimeEvent{"runtime.started", 0, std::string(BuildInfo::Version)});
     Logger::instance().info("Native ASI runtime initialized successfully.");
-    Logger::instance().info("Debug hotkeys: F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
+    Logger::instance().info("Debug hotkeys: F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
     return true;
 }
 
@@ -138,6 +139,42 @@ void Runtime::configureDebugCommands() {
     });
     debugCommands_.registerCommand("dump_status", [this]() { logDiagnostics(); });
     debugCommands_.registerCommand("validate_save", [this]() { validateSaveDiagnostic(); });
+
+    const auto allowed = [this]() {
+        if (!missionGate_.gameplayAllowed()) {
+            Logger::instance().warn("Stage 1 adapter probe blocked by mission compatibility gate; return to normal controllable free roam.");
+            return false;
+        }
+        return true;
+    };
+
+    debugCommands_.registerCommand("adapter.world", [this, allowed]() {
+        if (allowed()) logAdapterProbeReport(adapterDiagnostics_.probeWorld(), "adapter.world");
+    });
+    debugCommands_.registerCommand("adapter.animation", [this, allowed]() {
+        if (allowed()) logAdapterProbeReport(adapterDiagnostics_.probeAnimation(), "adapter.animation");
+    });
+    debugCommands_.registerCommand("adapter.props", [this, allowed]() {
+        if (allowed()) logAdapterProbeReport(adapterDiagnostics_.probeProps(), "adapter.props");
+    });
+    debugCommands_.registerCommand("adapter.interiors", [this, allowed]() {
+        if (allowed()) logAdapterProbeReport(adapterDiagnostics_.probeInteriorsAndDoors(), "adapter.interiors");
+    });
+    debugCommands_.registerCommand("adapter.ui", [this, allowed]() {
+        if (allowed()) logAdapterProbeReport(adapterDiagnostics_.probeUi(), "adapter.ui");
+    });
+    debugCommands_.registerCommand("adapter.audio", [this, allowed]() {
+        if (allowed()) logAdapterProbeReport(adapterDiagnostics_.probeAudio(), "adapter.audio");
+    });
+    debugCommands_.registerCommand("adapter.input", [this, allowed]() {
+        if (allowed()) logAdapterProbeReport(adapterDiagnostics_.probeInput(nowMs()), "adapter.input");
+    });
+    debugCommands_.registerCommand("adapter.debug_draw", [this, allowed]() {
+        if (allowed()) logAdapterProbeReport(adapterDiagnostics_.probeDebugDraw(nowMs()), "adapter.debug_draw");
+    });
+    debugCommands_.registerCommand("adapter.all", [this, allowed]() {
+        if (allowed()) logAdapterProbeReport(adapterDiagnostics_.probeAll(nowMs()), "adapter.all");
+    });
 }
 
 void Runtime::run() {
@@ -176,6 +213,16 @@ void Runtime::tickFrame() {
     if (config_.debugHotkeys) {
         handleDebugHotkeys();
     }
+
+    const auto now = nowMs();
+    if (missionGate_.gameplayAllowed()) {
+        for (const auto action : adapterDiagnostics_.tickInputProbe(now)) {
+            Logger::instance().info(
+                "Adapter input probe: " + std::string(platform::inputActionName(action)) + " justPressed=true");
+        }
+        adapterDiagnostics_.renderVisualProbe(now);
+    }
+
     if (config_.debugOverlay) {
         renderDebugOverlay();
     }
@@ -246,10 +293,14 @@ void Runtime::tickOneHz() {
 }
 
 void Runtime::handleDebugHotkeys() {
+    const bool f8Down = keyDown(VK_F8);
     const bool f9Down = keyDown(VK_F9);
     const bool f10Down = keyDown(VK_F10);
     const bool f11Down = keyDown(VK_F11);
 
+    if (f8Down && !f8WasDown_) {
+        debugCommands_.execute("adapter.all");
+    }
     if (f9Down && !f9WasDown_) {
         debugCommands_.execute("dump_status");
     }
@@ -260,6 +311,7 @@ void Runtime::handleDebugHotkeys() {
         debugCommands_.execute("validate_save");
     }
 
+    f8WasDown_ = f8Down;
     f9WasDown_ = f9Down;
     f10WasDown_ = f10Down;
     f11WasDown_ = f11Down;
@@ -267,7 +319,7 @@ void Runtime::handleDebugHotkeys() {
 
 void Runtime::renderDebugOverlay() {
     std::ostringstream text;
-    text << "GCO " << BuildInfo::Version
+    text << "GCO Stage 1 | " << BuildInfo::Version
          << " | " << compatibilityLevelName(missionGate_.level())
          << " | Wanted " << platform_.world.wantedLevel();
 
@@ -303,12 +355,41 @@ void Runtime::logDiagnostics() {
         << ", compatibility=" << compatibilityLevelName(missionGate_.level())
         << ", nearbyPeds=" << nearbyPedCount_
         << ", nearbyVehicles=" << nearbyVehicleCount_
+        << ", ownedProps=" << platform_.props.ownedCount()
         << ", schedulerTasks=" << scheduler_.recurringTaskCount()
         << ", queuedTasks=" << scheduler_.queuedTaskCount()
         << ", eventSubscribers=" << eventBus_.subscriberCount()
         << ", nextCaseSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Case)
         << ", nextVehicleSequence=" << idGenerator_.nextSequence(LogicalIdDomain::Vehicle);
     Logger::instance().debug(out.str());
+}
+
+void Runtime::logAdapterProbeReport(
+    const platform::AdapterProbeReport& report,
+    const char* commandName) {
+
+    for (const auto& result : report.results) {
+        const auto status = platform::adapterProbeStatusName(result.status);
+        const std::string line = "Adapter probe [" + result.id + "] " + std::string(status) + ": " + result.detail;
+        if (result.status == platform::AdapterProbeStatus::Fail) {
+            Logger::instance().error(line);
+        } else if (result.status == platform::AdapterProbeStatus::ResearchRequired
+            || result.status == platform::AdapterProbeStatus::ManualRequired) {
+            Logger::instance().warn(line);
+        } else {
+            Logger::instance().info(line);
+        }
+    }
+
+    std::ostringstream summary;
+    summary << "Adapter probe command '" << commandName << "': "
+            << report.passes() << " PASS, " << report.failures() << " FAIL, "
+            << report.results.size() << " total results.";
+    if (report.safeChecksPassed()) {
+        Logger::instance().info(summary.str());
+    } else {
+        Logger::instance().error(summary.str());
+    }
 }
 
 void Runtime::validateSaveDiagnostic() {
@@ -327,6 +408,11 @@ void Runtime::shutdown() {
     }
 
     eventBus_.publish(RuntimeEvent{"runtime.stopping", 0, {}});
+    const std::size_t cleanedProps = platform_.cleanupOwnedResources();
+    if (cleanedProps > 0) {
+        Logger::instance().info("Platform cleanup deleted " + std::to_string(cleanedProps) + " tracked project-owned prop(s).");
+    }
+
     scheduler_.clear();
     eventBus_.clear();
     playerSnapshot_.reset();

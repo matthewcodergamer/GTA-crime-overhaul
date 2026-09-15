@@ -1,13 +1,16 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace gco::platform {
 
-// Runtime-only ScriptHookV handles. These aliases must never appear in persisted data.
+// Runtime-only Script Hook V handles. These aliases must never appear in persisted data.
 using EntityHandle = int;
 using PedHandle = int;
 using VehicleHandle = int;
@@ -100,6 +103,15 @@ struct Rgba final {
     int a = 255;
 };
 
+// Domain code selects a semantic visibility policy, never a native trace bitmask.
+// Native trace flags remain an implementation detail of NativeWorldAdapter.
+enum class LineOfSightProfile : std::uint8_t {
+    DefaultVisibility,
+    Count
+};
+
+std::string_view lineOfSightProfileName(LineOfSightProfile profile) noexcept;
+
 enum class InputAction : std::uint8_t {
     Interact,
     Cancel,
@@ -110,9 +122,20 @@ enum class InputAction : std::uint8_t {
     Count
 };
 
-struct ControlBinding final {
-    int inputGroup = 0;
-    int control = 0;
+std::string_view inputActionName(InputAction action) noexcept;
+
+// Pure bookkeeping for mod-owned runtime objects. Tracking is independent of GTA and
+// therefore unit-testable. NativePropAttachmentAdapter consumes takeAll() during cleanup.
+class OwnedObjectTracker final {
+public:
+    [[nodiscard]] bool track(ObjectHandle object);
+    [[nodiscard]] bool untrack(ObjectHandle object);
+    [[nodiscard]] bool contains(ObjectHandle object) const noexcept;
+    [[nodiscard]] std::size_t size() const noexcept { return objects_.size(); }
+    [[nodiscard]] std::vector<ObjectHandle> takeAll();
+
+private:
+    std::vector<ObjectHandle> objects_;
 };
 
 } // namespace gco::platform
