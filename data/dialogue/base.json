@@ -1,34 +1,29 @@
 {
-  "schemaVersion": 1,
-  "events": {
-    "robbery.begin": [
-      { "subtitle": "Open the register. Now.", "audio": null }
-    ],
-    "clerk.compliant": [
-      { "subtitle": "Okay! Okay! I'm doing it!", "audio": null }
-    ],
-    "clerk.defiant": [
-      { "subtitle": "Get out of here!", "audio": null }
-    ],
-    "clerk.repeat_robber_recognized": [
-      { "subtitle": "You... I remember you.", "audio": null }
-    ],
-    "police_interview.face_seen": [
-      { "subtitle": "Did you get a look at the suspect?", "audio": null }
-    ],
-    "police_interview.face_not_seen": [
-      { "subtitle": "No. The suspect had their face covered.", "audio": null }
-    ],
-    "police_interview.vehicle_seen": [
-      { "subtitle": "Tell me about the vehicle.", "audio": null }
-    ],
-    "witness.reporting": [
-      { "subtitle": "I'm calling the police!", "audio": null }
-    ]
+  "schemaVersion": 2,
+  "schema": "schema.json",
+  "eventRegistry": "events.json",
+  "packs": [
+    "clerks.json",
+    "civilians.json",
+    "witnesses.json",
+    "police.json",
+    "guards.json",
+    "hostages.json",
+    "fallbacks.json"
+  ],
+  "selectionPolicy": {
+    "weightedRandom": true,
+    "respectConditions": true,
+    "lineCooldowns": true,
+    "sessionMax": true,
+    "noRepeatGroup": true,
+    "reuseGroupPenalty": 0.2,
+    "recentLinePenalty": 0.15,
+    "silenceAllowed": true
   },
-  "notes": [
-    "These are semantic subtitle fallbacks, not cloned Rockstar actor voices.",
-    "Existing GTA V ambient speech can be mapped later when a validated line fits the semantic event.",
-    "Original or properly licensed voice packs can override subtitle-only entries without changing gameplay logic."
-  ]
+  "audioPolicy": {
+    "ambientSpeechMappingStatus": "not_validated",
+    "voicePackStatus": "not_validated",
+    "requireValidatedAssetBeforeNonNullReference": true
+  }
 }
