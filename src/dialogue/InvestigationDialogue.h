@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SpeakerPresentation.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -108,6 +110,11 @@ struct InterviewOptions final {
     bool includeOpening = true;
     bool includeSummary = true;
     bool includeClosing = true;
+
+    // Presentation-only. These traits may influence data-driven wording and voice selection,
+    // but the composer must never use them to create or strengthen evidence.
+    SpeakerPresentationProfile officerProfile{};
+    SpeakerPresentationProfile witnessProfile{};
 };
 
 struct ConversationTurn final {
@@ -121,6 +128,8 @@ struct ConversationTurn final {
 
 struct InterviewPlan final {
     std::vector<ConversationTurn> turns;
+    SpeakerPresentationProfile officerProfile{};
+    SpeakerPresentationProfile witnessProfile{};
 
     [[nodiscard]] bool empty() const noexcept { return turns.empty(); }
     [[nodiscard]] std::size_t size() const noexcept { return turns.size(); }
