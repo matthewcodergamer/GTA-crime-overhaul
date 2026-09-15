@@ -38,18 +38,18 @@ endif()
 
 if(NOT EXISTS "${SCRIPTHOOKV_SDK_DIR}/inc/main.h")
     message(FATAL_ERROR
-        "ScriptHookV SDK not found. Set -DSCRIPTHOOKV_SDK_DIR=<path> or the "
-        "SCRIPTHOOKV_SDK_DIR environment variable. Expected inc/main.h.")
+        "ScriptHookV SDK not found. Set -DSCRIPHOOKV_SDK_DIR=<path> or the "
+        "SCRIPHOOKV_SDK_DIR environment variable. Expected inc/main.h.")
 endif()
 
-find_library(SCRIPTHOOKV_LIBRARY
+find_library(SCRIPHOOKV_LIBRARY
     NAMES ScriptHookV
-    PATHS "${SCRIPTHOOKV_SDK_DIR}/lib"
+    PATHS "${SCRIPHOOKV_SDK_DIR}/lib"
     NO_DEFAULT_PATH
 )
 
-if(NOT SCRIPTHOOKV_LIBRARY)
-    message(FATAL_ERROR "ScriptHookV.lib not found under ${SCRIPTHOOKV_SDK_DIR}/lib")
+if(NOT SCRIPHOOKV_LIBRARY)
+    message(FATAL_ERROR "ScriptHookV.lib not found under ${SCRIPHOOKV_SDK_DIR}/lib")
 endif()
 
 set(GCO_CRIME_SOURCES
@@ -83,6 +83,13 @@ set(GCO_WITNESS_SOURCES
     src/witness/WitnessDirector.h
 )
 
+set(GCO_IDENTITY_SOURCES
+    src/identity/IdentitySystem.cpp
+    src/identity/IdentitySystem.h
+    src/identity/ClerkRecognitionDirector.cpp
+    src/identity/ClerkRecognitionDirector.h
+)
+
 add_library(GTA_Crime_Overhaul SHARED
     src/main.cpp
     src/Runtime.cpp
@@ -95,6 +102,7 @@ add_library(GTA_Crime_Overhaul SHARED
     ${GCO_CRIME_SOURCES}
     ${GCO_ROBBERY_SOURCES}
     ${GCO_WITNESS_SOURCES}
+    ${GCO_IDENTITY_SOURCES}
     src/dialogue/InvestigationDialogue.cpp
     src/dialogue/InvestigationDialogue.h
     src/dialogue/SpeakerPresentation.cpp
@@ -116,12 +124,12 @@ add_library(GTA_Crime_Overhaul SHARED
 )
 
 target_include_directories(GTA_Crime_Overhaul PRIVATE
-    "${SCRIPTHOOKV_SDK_DIR}/inc"
+    "${SCRIPHOOKV_SDK_DIR}/inc"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
 target_link_libraries(GTA_Crime_Overhaul PRIVATE
-    "${SCRIPTHOOKV_LIBRARY}"
+    "${SCRIPHOOKV_LIBRARY}"
 )
 
 target_compile_definitions(GTA_Crime_Overhaul PRIVATE
@@ -266,9 +274,11 @@ if(BUILD_TESTING)
         tests/StorePersistenceTests.cpp
         src/robbery/StorePersistence.cpp
         src/robbery/StoreDomain.cpp
+        src/identity/IdentitySystem.cpp
         src/Foundation.cpp
         src/IdStatePersistence.cpp
         src/CoreServices.cpp
+        src/platform/PlatformTypes.cpp
     )
     target_include_directories(GCO_StorePersistenceTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_compile_definitions(GCO_StorePersistenceTests PRIVATE
@@ -281,9 +291,17 @@ if(BUILD_TESTING)
     add_executable(GCO_WitnessDomainTests
         tests/WitnessDomainTests.cpp
         src/witness/WitnessDomain.cpp
+        src/identity/IdentitySystem.cpp
         src/platform/PlatformTypes.cpp
     )
     target_include_directories(GCO_WitnessDomainTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+    add_executable(GCO_IdentitySystemTests
+        tests/IdentitySystemTests.cpp
+        src/identity/IdentitySystem.cpp
+        src/platform/PlatformTypes.cpp
+    )
+    target_include_directories(GCO_IdentitySystemTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
     foreach(test_target IN ITEMS
         GCO_PlatformTypesTests
@@ -296,7 +314,8 @@ if(BUILD_TESTING)
         GCO_StoreDomainTests
         GCO_StoreTargetTests
         GCO_StorePersistenceTests
-        GCO_WitnessDomainTests)
+        GCO_WitnessDomainTests
+        GCO_IdentitySystemTests)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE /W4 /permissive- /EHsc /utf-8)
         endif()
@@ -313,6 +332,7 @@ if(BUILD_TESTING)
     add_test(NAME StoreTarget COMMAND GCO_StoreTargetTests)
     add_test(NAME StorePersistence COMMAND GCO_StorePersistenceTests)
     add_test(NAME WitnessDomain COMMAND GCO_WitnessDomainTests)
+    add_test(NAME IdentitySystem COMMAND GCO_IdentitySystemTests)
 endif()
 
 install(TARGETS GTA_Crime_Overhaul
