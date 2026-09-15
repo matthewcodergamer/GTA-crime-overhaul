@@ -16,6 +16,15 @@ GridCell gridCellFor(const Vec3& position, const float cellSize) noexcept {
     };
 }
 
+std::string_view pedGenderName(const PedGender gender) noexcept {
+    switch (gender) {
+    case PedGender::Unknown: return "Unknown";
+    case PedGender::Masculine: return "Masculine";
+    case PedGender::Feminine: return "Feminine";
+    }
+    return "Unknown";
+}
+
 std::string_view lineOfSightProfileName(const LineOfSightProfile profile) noexcept {
     switch (profile) {
     case LineOfSightProfile::DefaultVisibility: return "DefaultVisibility";
