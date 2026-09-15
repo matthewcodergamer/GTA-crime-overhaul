@@ -34,9 +34,11 @@ public:
     [[nodiscard]] bool supported() const noexcept;
     [[nodiscard]] std::optional<int> balance() const noexcept;
     bool charge(int amount) const noexcept;
+    bool credit(int amount) const noexcept;
 
 private:
     [[nodiscard]] static const char* activeCashStatName() noexcept;
+    bool setBalance(int amount) const noexcept;
 };
 
 } // namespace gco::platform
