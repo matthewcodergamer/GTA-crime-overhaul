@@ -61,6 +61,8 @@ add_library(GTA_Crime_Overhaul SHARED
     src/Foundation.cpp
     src/Foundation.h
     src/IdStatePersistence.cpp
+    src/dialogue/InvestigationDialogue.cpp
+    src/dialogue/InvestigationDialogue.h
     src/platform/PlatformTypes.cpp
     src/platform/PlatformTypes.h
     src/platform/PlatformAdapters.cpp
@@ -152,7 +154,16 @@ if(BUILD_TESTING)
         GCO_GIT_SHA="${GCO_GIT_SHA}"
     )
 
-    foreach(test_target IN ITEMS GCO_PlatformTypesTests GCO_CoreServicesTests GCO_PersistenceTests)
+    add_executable(GCO_InvestigationDialogueTests
+        tests/InvestigationDialogueTests.cpp
+        src/dialogue/InvestigationDialogue.cpp
+        src/dialogue/InvestigationDialogue.h
+    )
+    target_include_directories(GCO_InvestigationDialogueTests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+
+    foreach(test_target IN ITEMS GCO_PlatformTypesTests GCO_CoreServicesTests GCO_PersistenceTests GCO_InvestigationDialogueTests)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE
                 /W4
@@ -166,6 +177,7 @@ if(BUILD_TESTING)
     add_test(NAME PlatformTypes COMMAND GCO_PlatformTypesTests)
     add_test(NAME CoreServices COMMAND GCO_CoreServicesTests)
     add_test(NAME Persistence COMMAND GCO_PersistenceTests)
+    add_test(NAME InvestigationDialogue COMMAND GCO_InvestigationDialogueTests)
 endif()
 
 install(TARGETS GTA_Crime_Overhaul
