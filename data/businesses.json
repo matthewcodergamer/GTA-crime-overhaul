@@ -1,12 +1,40 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "businesses": [
     {
       "id": "prototype_24_7",
       "type": "convenience_store",
       "enabled": false,
       "displayName": "Prototype 24/7",
-      "notes": "Coordinates and anchors are intentionally unset until the first in-game vertical-slice survey validates them on Legacy and Enhanced.",
+      "validation": {
+        "status": "REFERENCE_ONLY",
+        "legacyBuild": null,
+        "enhancedBuild": null,
+        "testedAtUtc": null,
+        "notes": "Production activation is blocked until this one Story Mode store volume and every required anchor are surveyed and visually validated in-game on the target editions. Do not paste coordinates blindly from a multiplayer script."
+      },
+      "activationRadius": 75.0,
+      "clerkAcquireRadius": 2.0,
+      "volume": null,
+      "threat": {
+        "maxDistance": 8.0,
+        "sustainMs": 1100,
+        "sessionTimeoutMs": 120000,
+        "playerLeaveGraceMs": 4000
+      },
+      "clerkPolicy": {
+        "replacementDelayMs": 21600000,
+        "recoveryMs": 1200000,
+        "personalityWeights": {
+          "cowardly": 0.16,
+          "compliant": 0.24,
+          "defiant": 0.14,
+          "panicky": 0.14,
+          "armed": 0.10,
+          "experienced": 0.14,
+          "reckless": 0.08
+        }
+      },
       "security": {
         "baseLevel": 0,
         "maxLevel": 4,
