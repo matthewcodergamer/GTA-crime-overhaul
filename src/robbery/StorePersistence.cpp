@@ -62,10 +62,7 @@ bool findDelimitedValue(
             else if (ch == '"') inString = false;
             continue;
         }
-        if (ch == '"') {
-            inString = true;
-            continue;
-        }
+        if (ch == '"') { inString = true; continue; }
         if (ch == open) ++depth;
         else if (ch == close) {
             --depth;
@@ -184,15 +181,21 @@ std::optional<std::string> extractString(const std::string& object, const std::s
             default: result.push_back(ch); break;
             }
             escaped = false;
-        } else if (ch == '\\') {
-            escaped = true;
-        } else if (ch == '"') {
-            return result;
-        } else {
-            result.push_back(ch);
-        }
+        } else if (ch == '\\') escaped = true;
+        else if (ch == '"') return result;
+        else result.push_back(ch);
     }
     return std::nullopt;
+}
+
+float rememberedFace(const identity::RecognitionMemory& memory, const identity::CharacterIdentity identityValue) {
+    const auto index = static_cast<std::size_t>(identityValue);
+    return index < memory.faceConfidence.size() ? memory.faceConfidence[index] : 0.0f;
+}
+
+void setRememberedFace(identity::RecognitionMemory& memory, const identity::CharacterIdentity identityValue, const float value) {
+    const auto index = static_cast<std::size_t>(identityValue);
+    if (index < memory.faceConfidence.size()) memory.faceConfidence[index] = value;
 }
 
 std::string serializeState(const StorePersistentState& state) {
@@ -221,7 +224,16 @@ std::string serializeState(const StorePersistentState& state) {
         << "      \"clerkCompliance\": " << clerk.compliance << ",\n"
         << "      \"clerkAlarmTendency\": " << clerk.alarmTendency << ",\n"
         << "      \"clerkResistance\": " << clerk.resistance << ",\n"
-        << "      \"clerkWithholdingTendency\": " << clerk.withholdingTendency << "\n"
+        << "      \"clerkWithholdingTendency\": " << clerk.withholdingTendency << ",\n"
+        << "      \"clerkFaceMichael\": " << rememberedFace(clerk.recognition, identity::CharacterIdentity::Michael) << ",\n"
+        << "      \"clerkFaceFranklin\": " << rememberedFace(clerk.recognition, identity::CharacterIdentity::Franklin) << ",\n"
+        << "      \"clerkFaceTrevor\": " << rememberedFace(clerk.recognition, identity::CharacterIdentity::Trevor) << ",\n"
+        << "      \"clerkFaceFreemodeMale\": " << rememberedFace(clerk.recognition, identity::CharacterIdentity::FreemodeMale) << ",\n"
+        << "      \"clerkFaceFreemodeFemale\": " << rememberedFace(clerk.recognition, identity::CharacterIdentity::FreemodeFemale) << ",\n"
+        << "      \"clerkLastOutfitKey\": \"" << escapeJson(clerk.recognition.lastOutfitKey) << "\",\n"
+        << "      \"clerkClothingConfidence\": " << clerk.recognition.clothingConfidence << ",\n"
+        << "      \"clerkLastOutfitSeenAtMs\": " << clerk.recognition.lastOutfitSeenAtMs << ",\n"
+        << "      \"clerkRecognitionCount\": " << clerk.recognition.recognitionCount << "\n"
         << "    }";
     return out.str();
 }
@@ -234,7 +246,7 @@ bool decodeState(const std::string& object, StorePersistentState& state, std::st
     const auto clerkId = extractUInt64(object, "clerkId");
     const auto personalityName = extractString(object, "clerkPersonality");
     const auto personality = personalityName ? clerkPersonalityFromString(*personalityName) : std::nullopt;
-    if (!version || *version != StorePersistentState::ModelVersion
+    if (!version || (*version != 1 && *version != StorePersistentState::ModelVersion)
         || !kind || *kind != "prototype_store_state"
         || !targetKey || *targetKey != "prototype_24_7"
         || !businessId || logicalIdDomain(*businessId) != LogicalIdDomain::Business
@@ -292,6 +304,32 @@ bool decodeState(const std::string& object, StorePersistentState& state, std::st
     loaded.clerk.resistance = static_cast<float>(*resistance);
     loaded.clerk.withholdingTendency = static_cast<float>(*withholding);
 
+    if (*version >= 2) {
+        const auto faceMichael = extractNumber(object, "clerkFaceMichael");
+        const auto faceFranklin = extractNumber(object, "clerkFaceFranklin");
+        const auto faceTrevor = extractNumber(object, "clerkFaceTrevor");
+        const auto faceFreemodeMale = extractNumber(object, "clerkFaceFreemodeMale");
+        const auto faceFreemodeFemale = extractNumber(object, "clerkFaceFreemodeFemale");
+        const auto outfitKey = extractString(object, "clerkLastOutfitKey");
+        const auto clothing = extractNumber(object, "clerkClothingConfidence");
+        const auto outfitSeen = extractUInt64(object, "clerkLastOutfitSeenAtMs");
+        const auto recognitionCount = extractUInt64(object, "clerkRecognitionCount");
+        if (!faceMichael || !faceFranklin || !faceTrevor || !faceFreemodeMale || !faceFreemodeFemale
+            || !outfitKey || !clothing || !outfitSeen || !recognitionCount || *recognitionCount > 1000000ull) {
+            if (reason) *reason = "prototype store v2 recognition fields are missing or invalid";
+            return false;
+        }
+        setRememberedFace(loaded.clerk.recognition, identity::CharacterIdentity::Michael, static_cast<float>(*faceMichael));
+        setRememberedFace(loaded.clerk.recognition, identity::CharacterIdentity::Franklin, static_cast<float>(*faceFranklin));
+        setRememberedFace(loaded.clerk.recognition, identity::CharacterIdentity::Trevor, static_cast<float>(*faceTrevor));
+        setRememberedFace(loaded.clerk.recognition, identity::CharacterIdentity::FreemodeMale, static_cast<float>(*faceFreemodeMale));
+        setRememberedFace(loaded.clerk.recognition, identity::CharacterIdentity::FreemodeFemale, static_cast<float>(*faceFreemodeFemale));
+        loaded.clerk.recognition.lastOutfitKey = *outfitKey;
+        loaded.clerk.recognition.clothingConfidence = static_cast<float>(*clothing);
+        loaded.clerk.recognition.lastOutfitSeenAtMs = *outfitSeen;
+        loaded.clerk.recognition.recognitionCount = static_cast<std::uint32_t>(*recognitionCount);
+    }
+
     state = std::move(loaded);
     return true;
 }
@@ -314,11 +352,7 @@ bool replaceCounter(std::string& document, const std::string_view key, const std
     return true;
 }
 
-bool patchBusinesses(
-    std::string& document,
-    const StorePersistentState& state,
-    std::string* reason) {
-
+bool patchBusinesses(std::string& document, const StorePersistentState& state, std::string* reason) {
     std::size_t open = 0;
     std::size_t close = 0;
     if (!findDelimitedValue(document, "businesses", '[', ']', open, close)) {
@@ -398,9 +432,7 @@ bool PrototypeStorePersistence::load(
         ids.nextSequence(LogicalIdDomain::Business),
         logicalIdSequence(state.businessId) + 1);
     std::uint64_t nextClerk = ids.nextSequence(LogicalIdDomain::Clerk);
-    if (state.clerk.id != 0) {
-        nextClerk = std::max<std::uint64_t>(nextClerk, logicalIdSequence(state.clerk.id) + 1);
-    }
+    if (state.clerk.id != 0) nextClerk = std::max<std::uint64_t>(nextClerk, logicalIdSequence(state.clerk.id) + 1);
     if (!ids.setNextSequence(LogicalIdDomain::Business, nextBusiness)
         || !ids.setNextSequence(LogicalIdDomain::Clerk, nextClerk)) {
         if (reason) *reason = "unable to restore prototype store logical ID counters";
