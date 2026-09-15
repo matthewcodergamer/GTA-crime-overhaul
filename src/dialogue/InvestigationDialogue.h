@@ -110,11 +110,6 @@ struct InterviewOptions final {
     bool includeOpening = true;
     bool includeSummary = true;
     bool includeClosing = true;
-
-    // Presentation-only. These traits may influence data-driven wording and voice selection,
-    // but the composer must never use them to create or strengthen evidence.
-    SpeakerPresentationProfile officerProfile{};
-    SpeakerPresentationProfile witnessProfile{};
 };
 
 struct ConversationTurn final {
@@ -128,6 +123,9 @@ struct ConversationTurn final {
 
 struct InterviewPlan final {
     std::vector<ConversationTurn> turns;
+
+    // Presentation-only metadata is attached after evidence planning. This separation is
+    // intentional: age/gender/voice style can never change what the witness knows.
     SpeakerPresentationProfile officerProfile{};
     SpeakerPresentationProfile witnessProfile{};
 
