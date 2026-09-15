@@ -21,6 +21,7 @@ public:
         VehicleModificationState modifications,
         std::uint64_t nowMs);
     OwnedVehicleRecord& ensureTemporaryVehicle(
+        platform::VehicleHandle liveHandle,
         const platform::VehicleSnapshot& snapshot,
         VehicleModificationState modifications,
         bool stolen,
