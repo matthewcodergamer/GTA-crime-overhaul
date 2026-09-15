@@ -46,6 +46,7 @@ private:
     LogicalId activeCaseId_ = 0;
     std::optional<LogicalId> currentVehicleId_;
     platform::VehicleHandle currentHandle_ = 0;
+    std::uint64_t lastTickNowMs_ = 0;
     bool initialized_ = false;
     bool persistenceDirty_ = false;
 };
