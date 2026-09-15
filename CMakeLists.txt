@@ -90,6 +90,19 @@ set(GCO_IDENTITY_SOURCES
     src/identity/ClerkRecognitionDirector.h
 )
 
+set(GCO_VEHICLE_SOURCES
+    src/vehicle/VehicleDomain.cpp
+    src/vehicle/VehicleDomain.h
+    src/vehicle/VehicleIdentitySystem.cpp
+    src/vehicle/VehicleIdentitySystem.h
+    src/vehicle/VehiclePersistence.cpp
+    src/vehicle/VehiclePersistence.h
+    src/vehicle/GarageVehicleService.cpp
+    src/vehicle/GarageVehicleService.h
+    src/vehicle/VehicleIdentityDirector.cpp
+    src/vehicle/VehicleIdentityDirector.h
+)
+
 add_library(GTA_Crime_Overhaul SHARED
     src/main.cpp
     src/Runtime.cpp
@@ -103,6 +116,7 @@ add_library(GTA_Crime_Overhaul SHARED
     ${GCO_ROBBERY_SOURCES}
     ${GCO_WITNESS_SOURCES}
     ${GCO_IDENTITY_SOURCES}
+    ${GCO_VEHICLE_SOURCES}
     src/dialogue/InvestigationDialogue.cpp
     src/dialogue/InvestigationDialogue.h
     src/dialogue/SpeakerPresentation.cpp
@@ -121,6 +135,8 @@ add_library(GTA_Crime_Overhaul SHARED
     src/platform/RobberyPedAdapter.h
     src/platform/WitnessPerceptionAdapter.cpp
     src/platform/WitnessPerceptionAdapter.h
+    src/platform/VehicleIdentityAdapter.cpp
+    src/platform/VehicleIdentityAdapter.h
 )
 
 target_include_directories(GTA_Crime_Overhaul PRIVATE
@@ -303,6 +319,26 @@ if(BUILD_TESTING)
     )
     target_include_directories(GCO_IdentitySystemTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
+    add_executable(GCO_VehicleIdentityTests
+        tests/VehicleIdentityTests.cpp
+        src/vehicle/VehicleDomain.cpp
+        src/vehicle/VehicleIdentitySystem.cpp
+        src/vehicle/VehiclePersistence.cpp
+        src/vehicle/GarageVehicleService.cpp
+        src/crime/CrimeDomain.cpp
+        src/Foundation.cpp
+        src/IdStatePersistence.cpp
+        src/CoreServices.cpp
+        src/platform/PlatformTypes.cpp
+    )
+    target_include_directories(GCO_VehicleIdentityTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(GCO_VehicleIdentityTests PRIVATE
+        WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE
+        GCO_VERSION="${PROJECT_VERSION}"
+        GCO_BUILD_CONFIG="$<CONFIG>"
+        GCO_GIT_SHA="${GCO_GIT_SHA}"
+    )
+
     foreach(test_target IN ITEMS
         GCO_PlatformTypesTests
         GCO_CoreServicesTests
@@ -315,7 +351,8 @@ if(BUILD_TESTING)
         GCO_StoreTargetTests
         GCO_StorePersistenceTests
         GCO_WitnessDomainTests
-        GCO_IdentitySystemTests)
+        GCO_IdentitySystemTests
+        GCO_VehicleIdentityTests)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE /W4 /permissive- /EHsc /utf-8)
         endif()
@@ -333,6 +370,7 @@ if(BUILD_TESTING)
     add_test(NAME StorePersistence COMMAND GCO_StorePersistenceTests)
     add_test(NAME WitnessDomain COMMAND GCO_WitnessDomainTests)
     add_test(NAME IdentitySystem COMMAND GCO_IdentitySystemTests)
+    add_test(NAME VehicleIdentity COMMAND GCO_VehicleIdentityTests)
 endif()
 
 install(TARGETS GTA_Crime_Overhaul
