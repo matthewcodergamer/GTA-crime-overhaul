@@ -10,6 +10,7 @@
 #include "platform/FacialAnimationAdapter.h"
 #include "platform/PedPresentationAdapter.h"
 #include "platform/PlatformAdapters.h"
+#include "robbery/StoreRuntime.h"
 
 #include <atomic>
 #include <cstddef>
@@ -65,9 +66,11 @@ private:
     crime::CrimeRegistry crimeRegistry_;
     crime::CrimePersistenceStore crimePersistence_;
     crime::CrimeDirector crimeDirector_;
+    robbery::PrototypeStoreRuntime storeRuntime_;
 
     std::atomic_bool stopRequested_{false};
     bool initialized_ = false;
+    bool f4WasDown_ = false;
     bool f5WasDown_ = false;
     bool f6WasDown_ = false;
     bool f7WasDown_ = false;
