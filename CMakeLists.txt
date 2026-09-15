@@ -42,6 +42,7 @@ add_library(GTA_Crime_Overhaul SHARED
     src/Runtime.h
     src/Foundation.cpp
     src/Foundation.h
+    src/platform/PlatformTypes.cpp
     src/platform/PlatformTypes.h
     src/platform/PlatformAdapters.cpp
     src/platform/PlatformAdapters.h
