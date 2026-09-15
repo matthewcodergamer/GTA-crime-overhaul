@@ -11,6 +11,7 @@
 #include "platform/PedPresentationAdapter.h"
 #include "platform/PlatformAdapters.h"
 #include "robbery/StoreRuntime.h"
+#include "witness/WitnessDirector.h"
 
 #include <atomic>
 #include <cstddef>
@@ -67,9 +68,11 @@ private:
     crime::CrimePersistenceStore crimePersistence_;
     crime::CrimeDirector crimeDirector_;
     robbery::PrototypeStoreRuntime storeRuntime_;
+    witness::WitnessDirector witnessDirector_;
 
     std::atomic_bool stopRequested_{false};
     bool initialized_ = false;
+    bool f3WasDown_ = false;
     bool f4WasDown_ = false;
     bool f5WasDown_ = false;
     bool f6WasDown_ = false;
