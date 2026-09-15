@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include <main.h>
 
+#include <cmath>
 #include <exception>
 #include <filesystem>
 #include <sstream>
@@ -14,6 +15,9 @@ namespace {
 constexpr float kDebugWorldRadius = 80.0f;
 constexpr std::size_t kDebugPedLimit = 64;
 constexpr std::size_t kDebugVehicleLimit = 64;
+constexpr float kInvestigationDemoActorRadius = 22.0f;
+constexpr float kInvestigationDemoHearRadius = 18.0f;
+constexpr std::uint64_t kInvestigationDemoTurnDelayMs = 3000;
 
 std::uint64_t nowMs() {
     return static_cast<std::uint64_t>(GetTickCount64());
@@ -107,7 +111,7 @@ bool Runtime::initialize() {
 
     eventBus_.publish(RuntimeEvent{"runtime.started", 0, std::string(BuildInfo::Version)});
     Logger::instance().info("Native ASI runtime initialized successfully.");
-    Logger::instance().info("Debug hotkeys: F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
+    Logger::instance().info("Debug hotkeys: F7=investigation dialogue overhear demo, F8=Stage 1 adapter probes, F9=dump diagnostics, F10=toggle overlay, F11=validate save (when DebugHotkeys=true).");
     return true;
 }
 
@@ -139,6 +143,9 @@ void Runtime::configureDebugCommands() {
     });
     debugCommands_.registerCommand("dump_status", [this]() { logDiagnostics(); });
     debugCommands_.registerCommand("validate_save", [this]() { validateSaveDiagnostic(); });
+    debugCommands_.registerCommand("dialogue.investigation_demo", [this]() {
+        startInvestigationDialogueDemo();
+    });
 
     const auto allowed = [this]() {
         if (!missionGate_.gameplayAllowed()) {
@@ -221,6 +228,7 @@ void Runtime::tickFrame() {
                 "Adapter input probe: " + std::string(platform::inputActionName(action)) + " justPressed=true");
         }
         adapterDiagnostics_.renderVisualProbe(now);
+        tickInvestigationDialogueDemo(now);
     }
 
     if (config_.debugOverlay) {
@@ -253,6 +261,9 @@ void Runtime::tickFiveHz() {
     }
 
     if (!missionGate_.gameplayAllowed()) {
+        if (!investigationDemoPlan_.empty()) {
+            stopInvestigationDialogueDemo("mission compatibility gate became active");
+        }
         playerSnapshot_.reset();
         nearbyPedCount_ = 0;
         nearbyVehicleCount_ = 0;
@@ -281,7 +292,8 @@ void Runtime::tickFiveHz() {
 }
 
 void Runtime::tickTwoHz() {
-    // Stage 1 deliberately keeps perception/police logic out of the adapter layer.
+    // Investigation dialogue composition is domain-owned. Scene spawning/interview orchestration
+    // remains a later police-system responsibility rather than being added to the GTA adapter layer.
 }
 
 void Runtime::tickOneHz() {
@@ -293,11 +305,15 @@ void Runtime::tickOneHz() {
 }
 
 void Runtime::handleDebugHotkeys() {
+    const bool f7Down = keyDown(VK_F7);
     const bool f8Down = keyDown(VK_F8);
     const bool f9Down = keyDown(VK_F9);
     const bool f10Down = keyDown(VK_F10);
     const bool f11Down = keyDown(VK_F11);
 
+    if (f7Down && !f7WasDown_) {
+        debugCommands_.execute("dialogue.investigation_demo");
+    }
     if (f8Down && !f8WasDown_) {
         debugCommands_.execute("adapter.all");
     }
@@ -311,6 +327,7 @@ void Runtime::handleDebugHotkeys() {
         debugCommands_.execute("validate_save");
     }
 
+    f7WasDown_ = f7Down;
     f8WasDown_ = f8Down;
     f9WasDown_ = f9Down;
     f10WasDown_ = f10Down;
@@ -330,6 +347,9 @@ void Runtime::renderDebugOverlay() {
     }
 
     text << " | Peds " << nearbyPedCount_ << " | Vehicles " << nearbyVehicleCount_;
+    if (!investigationDemoPlan_.empty()) {
+        text << " | Interview demo " << investigationDemoTurnIndex_ << '/' << investigationDemoPlan_.size();
+    }
     platform_.ui.helpText(text.str(), false);
 
     if (!playerSnapshot_ || !playerSnapshot_->alive) {
@@ -346,6 +366,157 @@ void Runtime::renderDebugOverlay() {
         platform::Rgba{255, 255, 255, 160});
 }
 
+void Runtime::startInvestigationDialogueDemo() {
+    if (!missionGate_.gameplayAllowed()) {
+        Logger::instance().warn("Investigation dialogue demo blocked by mission compatibility gate.");
+        return;
+    }
+
+    const auto player = platform_.world.playerPed();
+    const auto playerSnapshot = platform_.world.snapshotPed(player);
+    if (!playerSnapshot || !playerSnapshot->alive) {
+        Logger::instance().warn("Investigation dialogue demo requires a live controllable player.");
+        return;
+    }
+
+    const auto nearby = platform_.world.nearbyPeds(
+        playerSnapshot->position,
+        kInvestigationDemoActorRadius,
+        16);
+
+    platform::PedHandle actors[2]{0, 0};
+    std::size_t found = 0;
+    for (const auto ped : nearby) {
+        if (ped == player || !platform_.world.pedExists(ped)) {
+            continue;
+        }
+        const auto snapshot = platform_.world.snapshotPed(ped);
+        if (!snapshot || !snapshot->alive || snapshot->isPlayer) {
+            continue;
+        }
+        actors[found++] = ped;
+        if (found == 2) {
+            break;
+        }
+    }
+
+    if (found < 2) {
+        Logger::instance().warn("Investigation dialogue demo needs two nearby live non-player peds. Move to a populated area and press F7 again.");
+        platform_.ui.subtitle("GCO demo: need two nearby NPCs", 1800, true);
+        return;
+    }
+
+    dialogue::WitnessStatementFacts facts{};
+    facts.witnessKind = dialogue::WitnessKind::Clerk;
+    facts.suspectKnowledge = dialogue::SuspectKnowledge::Unknown;
+    facts.faceObserved = false;
+    facts.faceCovered = true;
+    facts.faceConfidence = 0.1f;
+    facts.clothingObserved = true;
+    facts.clothingDescription = "a dark jacket and gray pants";
+    facts.vehicleObserved = true;
+    facts.vehicleColor = "black";
+    facts.vehicleDescription = "two-door coupe";
+    facts.plateKnowledge = dialogue::PlateKnowledge::Partial;
+    facts.plateText = "46E";
+    facts.directionObserved = true;
+    facts.directionDescription = "east toward the freeway";
+    facts.witnessPanicked = true;
+
+    investigationDemoPlan_ = dialogue::InvestigationDialogueComposer::compose(
+        facts,
+        dialogue::InterviewOptions{4, static_cast<std::uint32_t>(frameCount_), true, true, true});
+    investigationDemoTurnIndex_ = 0;
+    investigationDemoOfficer_ = actors[0];
+    investigationDemoWitness_ = actors[1];
+    investigationDemoNextTurnMs_ = nowMs() + 500;
+
+    Logger::instance().info(
+        "Investigation dialogue demo started with synthetic UNKNOWN-SUSPECT facts. "
+        "Actors are nearby ambient peds used only to exercise conversation/overhearing; no case state is mutated.");
+    platform_.ui.subtitle("GCO investigation demo started - stay close to overhear", 2200, true);
+}
+
+void Runtime::tickInvestigationDialogueDemo(const std::uint64_t now) {
+    if (investigationDemoPlan_.empty() || now < investigationDemoNextTurnMs_) {
+        return;
+    }
+    if (investigationDemoTurnIndex_ >= investigationDemoPlan_.turns.size()) {
+        stopInvestigationDialogueDemo("completed");
+        return;
+    }
+
+    const auto& turn = investigationDemoPlan_.turns[investigationDemoTurnIndex_];
+    const platform::PedHandle speaker = turn.speaker == dialogue::InterviewSpeaker::Officer
+        ? investigationDemoOfficer_
+        : investigationDemoWitness_;
+
+    if (!platform_.world.pedExists(speaker)) {
+        stopInvestigationDialogueDemo("a demo speaker streamed out or was deleted");
+        return;
+    }
+
+    const auto player = platform_.world.playerPed();
+    const auto playerPosition = platform_.world.entityPosition(player);
+    const auto speakerPosition = platform_.world.entityPosition(speaker);
+    if (!playerPosition || !speakerPosition) {
+        stopInvestigationDialogueDemo("player or speaker position became unavailable");
+        return;
+    }
+
+    const float distance = std::sqrt(platform::distanceSquared(*playerPosition, *speakerPosition));
+    const bool clearLos = platform_.world.hasLineOfSight(
+        player,
+        speaker,
+        platform::LineOfSightProfile::DefaultVisibility);
+
+    // The demo uses distance as the hard audibility gate and logs LOS separately. Production
+    // spatial audio should use soft occlusion rather than making one reference-only LOS bitmask
+    // decide whether a human voice can pass through a doorway/counter/window.
+    const bool audible = dialogue::canOverhear(
+        dialogue::OverhearSample{distance, clearLos},
+        dialogue::OverhearPolicy{kInvestigationDemoHearRadius, false});
+
+    std::ostringstream log;
+    log << "Investigation demo turn " << (investigationDemoTurnIndex_ + 1)
+        << '/' << investigationDemoPlan_.size()
+        << " speaker=" << dialogue::interviewSpeakerName(turn.speaker)
+        << " topic=" << dialogue::interviewTopicName(turn.topic)
+        << " audible=" << (audible ? "true" : "false")
+        << " distance=" << distance
+        << " los=" << (clearLos ? "true" : "false")
+        << " event=" << turn.semanticEvent
+        << " text=" << turn.text;
+    Logger::instance().info(log.str());
+
+    if (audible) {
+        std::string subtitle = std::string(dialogue::interviewSpeakerName(turn.speaker)) + ": " + turn.text;
+        platform_.ui.subtitle(subtitle, 2500, true);
+    }
+
+    ++investigationDemoTurnIndex_;
+    investigationDemoNextTurnMs_ = now + kInvestigationDemoTurnDelayMs;
+    if (investigationDemoTurnIndex_ >= investigationDemoPlan_.turns.size()) {
+        // Leave one turn interval before clearing so the last subtitle remains readable.
+        investigationDemoNextTurnMs_ = now + kInvestigationDemoTurnDelayMs;
+    }
+}
+
+void Runtime::stopInvestigationDialogueDemo(const char* reason) {
+    if (investigationDemoPlan_.empty()) {
+        return;
+    }
+
+    Logger::instance().info(
+        std::string("Investigation dialogue demo stopped: ")
+        + (reason != nullptr ? reason : "unspecified") + ".");
+    investigationDemoPlan_.turns.clear();
+    investigationDemoTurnIndex_ = 0;
+    investigationDemoOfficer_ = 0;
+    investigationDemoWitness_ = 0;
+    investigationDemoNextTurnMs_ = 0;
+}
+
 void Runtime::logDiagnostics() {
     std::ostringstream out;
     out << "Diagnostics: version=" << BuildInfo::Version
@@ -356,6 +527,7 @@ void Runtime::logDiagnostics() {
         << ", nearbyPeds=" << nearbyPedCount_
         << ", nearbyVehicles=" << nearbyVehicleCount_
         << ", ownedProps=" << platform_.props.ownedCount()
+        << ", investigationDemoActive=" << (!investigationDemoPlan_.empty() ? "true" : "false")
         << ", schedulerTasks=" << scheduler_.recurringTaskCount()
         << ", queuedTasks=" << scheduler_.queuedTaskCount()
         << ", eventSubscribers=" << eventBus_.subscriberCount()
@@ -408,6 +580,7 @@ void Runtime::shutdown() {
     }
 
     eventBus_.publish(RuntimeEvent{"runtime.stopping", 0, {}});
+    stopInvestigationDialogueDemo("runtime shutdown");
     const std::size_t cleanedProps = platform_.cleanupOwnedResources();
     if (cleanedProps > 0) {
         Logger::instance().info("Platform cleanup deleted " + std::to_string(cleanedProps) + " tracked project-owned prop(s).");
