@@ -87,6 +87,12 @@ bool Runtime::initialize() {
         + "; schema=" + std::to_string(persistence.schemaVersion)
         + "; " + persistence.detail);
 
+    std::string idStateReason;
+    if (!worldState_.loadLogicalIdState(idGenerator_, &idStateReason)) {
+        Logger::instance().error("Unable to restore logical ID state: " + idStateReason);
+        return false;
+    }
+
     if (!config_.enabled) {
         Logger::instance().warn("Mod is disabled in configuration; runtime will remain idle except for lifecycle cleanup.");
     }
