@@ -37,6 +37,17 @@ std::optional<std::string_view> descriptorField(const std::string_view descripto
     return descriptor.substr(valueStart, end == std::string_view::npos ? descriptor.size() - valueStart : end - valueStart);
 }
 
+bool sameObservedBoloFacts(const VehicleBoloState& a, const VehicleBoloState& b) noexcept {
+    return a.active == b.active
+        && a.modelHash == b.modelHash
+        && a.primaryColor == b.primaryColor
+        && a.secondaryColor == b.secondaryColor
+        && a.plateText == b.plateText
+        && a.modelConfidence == b.modelConfidence
+        && a.colorConfidence == b.colorConfidence
+        && a.plateConfidence == b.plateConfidence;
+}
+
 } // namespace
 
 OwnedVehicleRecord& VehicleIdentitySystem::registerVehicle(
@@ -59,16 +70,17 @@ OwnedVehicleRecord& VehicleIdentitySystem::registerVehicle(
 }
 
 OwnedVehicleRecord& VehicleIdentitySystem::ensureTemporaryVehicle(
+    const platform::VehicleHandle liveHandle,
     const platform::VehicleSnapshot& snapshot,
     VehicleModificationState modifications,
     const bool stolen,
     const std::uint64_t nowMs) {
 
-    if (const auto bound = logicalIdForHandle(snapshot.handle); bound.has_value()) {
+    if (const auto bound = logicalIdForHandle(liveHandle); bound.has_value()) {
         if (auto* existing = find(*bound); existing != nullptr) return *existing;
     }
     if (auto* existing = findByAppearance(snapshot); existing != nullptr) {
-        bindLiveHandle(snapshot.handle, existing->id);
+        bindLiveHandle(liveHandle, existing->id);
         return *existing;
     }
 
@@ -83,7 +95,7 @@ OwnedVehicleRecord& VehicleIdentitySystem::ensureTemporaryVehicle(
         std::move(appearance),
         std::move(modifications),
         nowMs);
-    bindLiveHandle(snapshot.handle, record.id);
+    bindLiveHandle(liveHandle, record.id);
     return record;
 }
 
@@ -203,10 +215,7 @@ bool VehicleIdentitySystem::refreshBoloFromCase(
 
     VehicleBoloState rebuilt{};
     rebuilt.caseId = file.id;
-    rebuilt.linkedVehicleId = linkedVehicleId;
     rebuilt.active = false;
-    rebuilt.physicalContinuityKnown = linkedVehicleId.has_value();
-    rebuilt.updatedAtMs = nowMs;
 
     for (const auto& evidence : file.evidence) {
         if (evidence.kind == crime::EvidenceKind::Vehicle) {
@@ -235,8 +244,26 @@ bool VehicleIdentitySystem::refreshBoloFromCase(
     const auto it = std::find_if(bolos_.begin(), bolos_.end(), [caseId = file.id](const VehicleBoloState& value) {
         return value.caseId == caseId;
     });
-    if (it == bolos_.end()) bolos_.push_back(std::move(rebuilt));
-    else *it = std::move(rebuilt);
+
+    if (it == bolos_.end()) {
+        rebuilt.linkedVehicleId = linkedVehicleId;
+        rebuilt.physicalContinuityKnown = linkedVehicleId.has_value();
+        rebuilt.updatedAtMs = nowMs;
+        bolos_.push_back(std::move(rebuilt));
+        return true;
+    }
+
+    // Rebuilding evidence facts must never erase a physical-continuity result established by an
+    // observed swap. A null linkedVehicleId means "no new continuity information", not "forget it".
+    rebuilt.linkedVehicleId = linkedVehicleId.has_value() ? linkedVehicleId : it->linkedVehicleId;
+    rebuilt.physicalContinuityKnown = linkedVehicleId.has_value() ? true : it->physicalContinuityKnown;
+    if (sameObservedBoloFacts(*it, rebuilt)
+        && it->linkedVehicleId == rebuilt.linkedVehicleId
+        && it->physicalContinuityKnown == rebuilt.physicalContinuityKnown) {
+        return true;
+    }
+    rebuilt.updatedAtMs = nowMs;
+    *it = std::move(rebuilt);
     return true;
 }
 
@@ -293,7 +320,9 @@ void VehicleIdentitySystem::restore(
     bolos_ = std::move(bolos);
     liveToLogical_.clear();
 
-    std::uint64_t nextVehicle = 1;
+    // world.json owns the global monotonic counters. Vehicle persistence may raise that counter
+    // when it contains a higher historical ID, but it must never lower the already-restored value.
+    std::uint64_t nextVehicle = ids_.nextSequence(LogicalIdDomain::Vehicle);
     for (const auto& record : records_) {
         if (logicalIdDomain(record.id) == LogicalIdDomain::Vehicle) {
             nextVehicle = std::max(nextVehicle, logicalIdSequence(record.id) + 1);
