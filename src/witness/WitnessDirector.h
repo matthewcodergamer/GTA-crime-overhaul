@@ -43,7 +43,9 @@ public:
     void renderDebug() const;
     void setDebugEnabled(bool value) noexcept { debugEnabled_ = value; }
     void toggleDebug() noexcept { debugEnabled_ = !debugEnabled_; }
+    void clearCasePersistenceDirty() noexcept { casePersistenceDirty_ = false; }
     [[nodiscard]] bool debugEnabled() const noexcept { return debugEnabled_; }
+    [[nodiscard]] bool casePersistenceDirty() const noexcept { return casePersistenceDirty_; }
     [[nodiscard]] std::size_t candidateCount() const noexcept { return candidates_.size(); }
     [[nodiscard]] bool incidentActive() const noexcept { return incident_.caseId != 0; }
     [[nodiscard]] LogicalId activeCaseId() const noexcept { return incident_.caseId; }
@@ -128,6 +130,7 @@ private:
     bool initialized_ = false;
     bool debugEnabled_ = false;
     bool phoneFallbackLogged_ = false;
+    bool casePersistenceDirty_ = false;
 };
 
 } // namespace gco::witness
