@@ -161,7 +161,7 @@ public:
     [[nodiscard]] std::optional<PedSnapshot> snapshotPed(PedHandle ped) const override;
     [[nodiscard]] std::optional<VehicleSnapshot> snapshotVehicle(
         VehicleHandle vehicle,
-        std::optional<std::uint64_t> projectVehicleId) const override;
+        std::optional<std::uint64_t> projectVehicleId = std::nullopt) const override;
 };
 
 class NativeAnimationAdapter final : public IAnimationAdapter {
