@@ -17,6 +17,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate dialogue data
+        shell: pwsh
+        run: |
+          python tools/validate_dialogue.py --root data/dialogue --simulate 120 --seed 1337
+
       - name: Acquire ScriptHookV SDK
         id: sdk
         shell: pwsh
