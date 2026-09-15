@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "statusValues": [
+    "VERIFIED_IN_GAME",
+    "VERIFIED_DATA",
+    "REFERENCE_ONLY",
+    "CUSTOM_REQUIRED",
+    "REJECTED"
+  ],
+  "notes": "Research candidates only. Production code must not assume an entry works merely because it is listed here.",
+  "candidates": [
+    {
+      "id": "example.animation.robbery",
+      "kind": "animation",
+      "status": "REFERENCE_ONLY",
+      "source": "replace-with-source",
+      "identifier": {
+        "dictionary": "replace-with-dictionary",
+        "clip": "replace-with-clip"
+      },
+      "intendedUse": "replace-with-use",
+      "actors": ["FRANKLIN", "MICHAEL", "TREVOR", "AMBIENT_PED"],
+      "test": {
+        "legacyBuild": null,
+        "enhancedBuild": null,
+        "testedAtUtc": null,
+        "loadSuccess": null,
+        "visualFit": null,
+        "interruptSafe": null,
+        "cleanupSafe": null,
+        "vehicleTransitionSafe": null,
+        "notes": ""
+      },
+      "fallback": "replace-with-safe-fallback"
+    }
+  ]
+}
