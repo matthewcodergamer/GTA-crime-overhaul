@@ -48,6 +48,28 @@ int main() {
     expect(first.schemaVersion == WorldStateStore::SchemaVersion, "created save reports schema");
     expect(store.validateFile(paths.worldSave), "created world validates");
 
+    LogicalIdGenerator restoredIds;
+    std::string idReason;
+    expect(store.loadLogicalIdState(restoredIds, &idReason), "new save restores logical ID counters");
+    expect(restoredIds.nextSequence(LogicalIdDomain::Case) == 1, "case counter starts at one");
+    expect(restoredIds.nextSequence(LogicalIdDomain::Vehicle) == 1, "vehicle counter starts at one");
+
+    std::string customIds = store.emptyWorldJson();
+    const auto nextIdsStart = customIds.find("\"nextIds\"");
+    const auto nextIdsEnd = customIds.find('}', nextIdsStart);
+    customIds.replace(
+        nextIdsStart,
+        nextIdsEnd - nextIdsStart + 1,
+        "\"nextIds\": { \"case\": 7, \"business\": 11, \"clerk\": 13, \"vehicle\": 17, \"lootContainer\": 19 }");
+    expect(store.writeWorldAtomically(customIds), "world with custom ID counters writes atomically");
+    LogicalIdGenerator customRestoredIds;
+    expect(store.loadLogicalIdState(customRestoredIds, &idReason), "custom ID counters restore");
+    expect(customRestoredIds.nextSequence(LogicalIdDomain::Case) == 7, "case counter restore is exact");
+    expect(customRestoredIds.nextSequence(LogicalIdDomain::Business) == 11, "business counter restore is exact");
+    expect(customRestoredIds.nextSequence(LogicalIdDomain::Clerk) == 13, "clerk counter restore is exact");
+    expect(customRestoredIds.nextSequence(LogicalIdDomain::Vehicle) == 17, "vehicle counter restore is exact");
+    expect(customRestoredIds.nextSequence(LogicalIdDomain::LootContainer) == 19, "loot counter restore is exact");
+
     const std::string valid = store.emptyWorldJson();
     expect(store.writeWorldAtomically(valid), "validated atomic rewrite succeeds");
     expect(std::filesystem::exists(paths.worldBackup), "atomic rewrite creates backup");
