@@ -89,6 +89,29 @@ CrimeRecordResult CrimeRegistry::recordCrime(
     return result;
 }
 
+bool CrimeRegistry::escalateCrime(
+    const LogicalId crimeId,
+    const CrimeSeverity severity,
+    const std::uint64_t nowMs) {
+
+    const auto found = crimes_.find(crimeId);
+    if (found == crimes_.end()) {
+        return false;
+    }
+    if (static_cast<std::uint8_t>(severity) < static_cast<std::uint8_t>(found->second.severity)) {
+        return false;
+    }
+
+    found->second.severity = severity;
+    CaseFile* file = findCaseMutable(found->second.caseId);
+    if (file == nullptr || isTerminal(file->state)) {
+        return false;
+    }
+    refreshCaseSeverity(*file);
+    file->updatedAtMs = std::max(file->updatedAtMs, nowMs);
+    return true;
+}
+
 EvidenceAddResult CrimeRegistry::addEvidence(
     const LogicalId caseId,
     EvidenceRecord evidence) {
@@ -261,8 +284,6 @@ float CrimeRegistry::aggregateConfidence(
         return 0.0f;
     }
 
-    // One maximum confidence per independence family prevents duplicate/repeated reports from
-    // multiplying certainty. Empty keys are independent after exact duplicates are suppressed.
     std::map<std::string, float> independent;
     std::size_t anonymousIndex = 0;
     for (const auto& evidence : file->evidence) {
