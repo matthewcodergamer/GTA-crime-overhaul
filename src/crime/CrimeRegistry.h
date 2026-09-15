@@ -20,6 +20,7 @@ enum class EvidenceAddResult : std::uint8_t {
 class CrimeRegistry final {
 public:
     CrimeRecordResult recordCrime(const CrimeOccurrence& occurrence, LogicalIdGenerator& ids);
+    bool escalateCrime(LogicalId crimeId, CrimeSeverity severity, std::uint64_t nowMs);
 
     EvidenceAddResult addEvidence(LogicalId caseId, EvidenceRecord evidence);
     bool transitionCase(LogicalId caseId, CaseState nextState, std::uint64_t nowMs);
