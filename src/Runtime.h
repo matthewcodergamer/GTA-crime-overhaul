@@ -4,6 +4,8 @@
 #include "Foundation.h"
 #include "dialogue/InvestigationDialogue.h"
 #include "platform/AdapterDiagnostics.h"
+#include "platform/FacialAnimationAdapter.h"
+#include "platform/PedPresentationAdapter.h"
 #include "platform/PlatformAdapters.h"
 
 #include <atomic>
@@ -45,6 +47,8 @@ private:
     WorldStateStore worldState_;
     platform::PlatformServices platform_;
     platform::AdapterDiagnostics adapterDiagnostics_;
+    platform::NativePedPresentationAdapter pedPresentation_;
+    platform::NativeFacialAnimationAdapter facialAnimation_;
 
     Scheduler scheduler_;
     EventBus eventBus_;
