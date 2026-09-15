@@ -21,17 +21,29 @@ int main() {
     expect(BuildInfo::BinaryName == "GTA_Crime_Overhaul.asi", "authoritative binary name");
     expect(BuildInfo::SaveSchemaVersion == 1, "save schema version constant");
 
+    // Existing Stage 0 domains are persisted. Their numeric values are compatibility locks.
+    expect(static_cast<unsigned>(LogicalIdDomain::Case) == 1U, "case domain number remains stable");
+    expect(static_cast<unsigned>(LogicalIdDomain::Business) == 2U, "business domain number remains stable");
+    expect(static_cast<unsigned>(LogicalIdDomain::Clerk) == 3U, "clerk domain number remains stable");
+    expect(static_cast<unsigned>(LogicalIdDomain::Vehicle) == 4U, "vehicle domain number remains stable");
+    expect(static_cast<unsigned>(LogicalIdDomain::LootContainer) == 5U, "loot domain number remains stable");
+    expect(static_cast<unsigned>(LogicalIdDomain::Crime) == 6U, "crime domain is appended without renumbering old IDs");
+
     LogicalIdGenerator ids;
     const LogicalId case1 = ids.next(LogicalIdDomain::Case);
     const LogicalId case2 = ids.next(LogicalIdDomain::Case);
     const LogicalId vehicle1 = ids.next(LogicalIdDomain::Vehicle);
-    expect(case1 != 0 && case2 != 0 && vehicle1 != 0, "logical IDs are non-zero");
-    expect(case1 != case2 && case1 != vehicle1, "logical IDs are unique across sequence/domain");
+    const LogicalId crime1 = ids.next(LogicalIdDomain::Crime);
+    expect(case1 != 0 && case2 != 0 && vehicle1 != 0 && crime1 != 0, "logical IDs are non-zero");
+    expect(case1 != case2 && case1 != vehicle1 && case1 != crime1, "logical IDs are unique across sequence/domain");
     expect(logicalIdDomain(case1) == LogicalIdDomain::Case, "case ID encodes case domain");
     expect(logicalIdDomain(vehicle1) == LogicalIdDomain::Vehicle, "vehicle ID encodes vehicle domain");
+    expect(logicalIdDomain(crime1) == LogicalIdDomain::Crime, "crime ID encodes crime domain");
     expect(logicalIdSequence(case2) == 2, "case sequence increments deterministically");
     expect(ids.setNextSequence(LogicalIdDomain::Clerk, 42), "ID generator accepts valid restored sequence");
     expect(logicalIdSequence(ids.next(LogicalIdDomain::Clerk)) == 42, "restored sequence is deterministic");
+    expect(ids.setNextSequence(LogicalIdDomain::Crime, 77), "crime sequence can be restored independently");
+    expect(logicalIdSequence(ids.next(LogicalIdDomain::Crime)) == 77, "restored crime sequence is deterministic");
     expect(!ids.setNextSequence(LogicalIdDomain::Clerk, 0), "zero sequence is rejected");
 
     EventBus bus;
