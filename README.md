@@ -57,6 +57,17 @@ Use these when handing work to ChatGPT/Codex or another coding agent:
 
 The prompts explicitly forbid guessed GTA native/animation/model identifiers. Asset findings must be classified as `VERIFIED_IN_GAME`, `VERIFIED_DATA`, `REFERENCE_ONLY`, `CUSTOM_REQUIRED`, or `REJECTED`.
 
+## Rule for step ranges
+
+Only group roadmap steps when they form **one atomic system change** that can be reviewed and tested as a coherent unit. A roadmap stage is not automatically a safe implementation range.
+
+- Good: `81–87` witness observation channels.
+- Good: `117–123` garage plate-changing behavior.
+- Good: `191–196` bag tiers/equip/visual attachment.
+- Bad: `77–128` because witness, identity and vehicle systems become too large to review safely.
+
+If a range crosses subsystem ownership, persistence boundaries, or distinct acceptance criteria, split it into smaller contiguous ranges. Future implementation prompts should take the smallest safe atomic slice rather than bundling unrelated systems simply because they appear under the same stage heading.
+
 ## Major systems
 
 - Free-form store, commercial-target and bank robberies
