@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreServices.h"
+#include "identity/IdentitySystem.h"
 #include "platform/PlatformTypes.h"
 
 #include <cstddef>
@@ -91,6 +92,7 @@ struct WitnessObservation final {
     float bestVisualConfidence = 0.0f;
 
     ObservedFact<FaceCoverKnowledge> faceCover{};
+    ObservedFact<identity::CharacterIdentity> faceIdentity{};
     ObservedFact<std::string> outfit{};
     ObservedFact<WeaponClass> weapon{};
     ObservedFact<VehicleVisual> vehicle{};
@@ -130,6 +132,8 @@ struct PerceptionSample final {
 
     float faceViewQuality = 0.0f;
     FaceCoverKnowledge faceCover = FaceCoverKnowledge::Unknown;
+    bool faceCaptureAllowed = true;
+    identity::CharacterIdentity characterIdentity = identity::CharacterIdentity::Unknown;
     std::string outfitSignature;
     bool weaponVisible = false;
     WeaponClass weaponClass = WeaponClass::Unknown;
@@ -194,7 +198,6 @@ private:
     const platform::Vec3& vehiclePosition,
     float vehicleHeadingDegrees,
     float distance) noexcept;
-[[nodiscard]] std::string outfitSignature(const platform::PedSnapshot& ped);
 
 void applyPerceptionSample(
     WitnessObservation& observation,
