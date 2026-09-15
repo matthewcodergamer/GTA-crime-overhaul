@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -15,6 +16,17 @@ namespace {
 
 constexpr std::size_t kWorldPoolCapacity = 2048;
 constexpr float kPi = 3.14159265358979323846f;
+
+// Cfx/native-reference documentation describes HAS_ENTITY_CLEAR_LOS_TO_ENTITY's third
+// parameter as collider flags and notes 17 as the common GTA-script value. The semantic
+// choice is intentionally hidden here so law/witness code never owns native bitmasks.
+constexpr int kDefaultVisibilityLosFlags = 17;
+
+struct NativeControlBinding final {
+    int inputGroup = 0;
+    int control = 0;
+    bool valid = false;
+};
 
 Vec3 fromNative(const Vector3& value) noexcept {
     return {value.x, value.y, value.z};
@@ -28,7 +40,7 @@ std::vector<HandleT> collectNearby(
     const float radius,
     const std::size_t maxResults) {
 
-    if (radius < 0.0f || maxResults == 0) {
+    if (!(radius >= 0.0f) || !std::isfinite(radius) || maxResults == 0) {
         return {};
     }
 
@@ -79,18 +91,37 @@ std::vector<HandleT> collectNearby(
     return result;
 }
 
-ControlBinding bindingFor(const InputAction action) noexcept {
-    // Current GTA control IDs. Using PAD means keyboard/controller remapping remains GTA-owned.
+std::optional<int> losFlagsFor(const LineOfSightProfile profile) noexcept {
+    switch (profile) {
+    case LineOfSightProfile::DefaultVisibility: return kDefaultVisibilityLosFlags;
+    case LineOfSightProfile::Count: break;
+    }
+    return std::nullopt;
+}
+
+NativeControlBinding bindingFor(const InputAction action) noexcept {
+    // GTA PAD control IDs are isolated here. Gameplay code deals only in InputAction values.
     switch (action) {
-    case InputAction::Interact: return {0, 51};       // INPUT_CONTEXT
-    case InputAction::Cancel: return {0, 177};       // INPUT_FRONTEND_CANCEL
-    case InputAction::Sprint: return {0, 21};        // INPUT_SPRINT
-    case InputAction::Aim: return {0, 25};           // INPUT_AIM
-    case InputAction::Attack: return {0, 24};        // INPUT_ATTACK
-    case InputAction::EnterVehicle: return {0, 23};  // INPUT_VEH_ENTER
+    case InputAction::Interact: return {0, 51, true};       // INPUT_CONTEXT
+    case InputAction::Cancel: return {0, 177, true};       // INPUT_FRONTEND_CANCEL
+    case InputAction::Sprint: return {0, 21, true};        // INPUT_SPRINT
+    case InputAction::Aim: return {0, 25, true};           // INPUT_AIM
+    case InputAction::Attack: return {0, 24, true};        // INPUT_ATTACK
+    case InputAction::EnterVehicle: return {0, 23, true};  // INPUT_VEH_ENTER
     case InputAction::Count: break;
     }
-    return {0, 0};
+    return {};
+}
+
+void deleteObjectIfPresent(ObjectHandle object) {
+    if (object == 0 || ENTITY::DOES_ENTITY_EXIST(object) == FALSE) {
+        return;
+    }
+    if (ENTITY::IS_ENTITY_ATTACHED(object) != FALSE) {
+        ENTITY::DETACH_ENTITY(object, TRUE, TRUE);
+    }
+    Object nativeObject = object;
+    OBJECT::DELETE_OBJECT(&nativeObject);
 }
 
 } // namespace
@@ -169,12 +200,16 @@ std::vector<VehicleHandle> NativeWorldAdapter::nearbyVehicles(
 bool NativeWorldAdapter::hasLineOfSight(
     const EntityHandle from,
     const EntityHandle to,
-    const int traceType) const {
+    const LineOfSightProfile profile) const {
 
     if (!entityExists(from) || !entityExists(to)) {
         return false;
     }
-    return ENTITY::HAS_ENTITY_CLEAR_LOS_TO_ENTITY(from, to, traceType) != FALSE;
+    const auto flags = losFlagsFor(profile);
+    if (!flags.has_value()) {
+        return false;
+    }
+    return ENTITY::HAS_ENTITY_CLEAR_LOS_TO_ENTITY(from, to, *flags) != FALSE;
 }
 
 std::optional<PedSnapshot> NativeWorldAdapter::snapshotPed(const PedHandle ped) const {
@@ -301,6 +336,17 @@ bool NativeAnimationAdapter::cancelPedTasks(const PedHandle ped, const bool imme
     return true;
 }
 
+bool NativePropAttachmentAdapter::adoptOwned(const ObjectHandle object) {
+    if (object == 0 || ENTITY::DOES_ENTITY_EXIST(object) == FALSE) {
+        return false;
+    }
+    return owned_.track(object);
+}
+
+bool NativePropAttachmentAdapter::releaseOwnership(const ObjectHandle object) {
+    return owned_.untrack(object);
+}
+
 bool NativePropAttachmentAdapter::attach(
     const ObjectHandle object,
     const EntityHandle parent,
@@ -353,14 +399,17 @@ void NativePropAttachmentAdapter::deleteOwned(ObjectHandle& object) {
         return;
     }
 
-    if (ENTITY::DOES_ENTITY_EXIST(object) != FALSE) {
-        if (ENTITY::IS_ENTITY_ATTACHED(object) != FALSE) {
-            ENTITY::DETACH_ENTITY(object, TRUE, TRUE);
-        }
-        Object nativeObject = object;
-        OBJECT::DELETE_OBJECT(&nativeObject);
-    }
+    (void)owned_.untrack(object);
+    deleteObjectIfPresent(object);
     object = 0;
+}
+
+std::size_t NativePropAttachmentAdapter::cleanupOwned() {
+    const auto objects = owned_.takeAll();
+    for (const auto object : objects) {
+        deleteObjectIfPresent(object);
+    }
+    return objects.size();
 }
 
 InteriorId NativeInteriorDoorAdapter::interiorFromEntity(const EntityHandle entity) const {
@@ -525,28 +574,24 @@ void NativeAudioAdapter::stopPedSpeaking(const PedHandle ped) {
     }
 }
 
-ControlBinding NativeInputAdapter::binding(const InputAction action) const {
-    return bindingFor(action);
-}
-
 bool NativeInputAdapter::pressed(const InputAction action) const {
-    const auto bind = binding(action);
-    return PAD::IS_CONTROL_PRESSED(bind.inputGroup, bind.control) != FALSE;
+    const auto bind = bindingFor(action);
+    return bind.valid && PAD::IS_CONTROL_PRESSED(bind.inputGroup, bind.control) != FALSE;
 }
 
 bool NativeInputAdapter::justPressed(const InputAction action) const {
-    const auto bind = binding(action);
-    return PAD::IS_CONTROL_JUST_PRESSED(bind.inputGroup, bind.control) != FALSE;
+    const auto bind = bindingFor(action);
+    return bind.valid && PAD::IS_CONTROL_JUST_PRESSED(bind.inputGroup, bind.control) != FALSE;
 }
 
 bool NativeInputAdapter::justReleased(const InputAction action) const {
-    const auto bind = binding(action);
-    return PAD::IS_CONTROL_JUST_RELEASED(bind.inputGroup, bind.control) != FALSE;
+    const auto bind = bindingFor(action);
+    return bind.valid && PAD::IS_CONTROL_JUST_RELEASED(bind.inputGroup, bind.control) != FALSE;
 }
 
 float NativeInputAdapter::normal(const InputAction action) const {
-    const auto bind = binding(action);
-    return PAD::GET_CONTROL_NORMAL(bind.inputGroup, bind.control);
+    const auto bind = bindingFor(action);
+    return bind.valid ? PAD::GET_CONTROL_NORMAL(bind.inputGroup, bind.control) : 0.0f;
 }
 
 void NativeDebugDrawAdapter::line(const Vec3& from, const Vec3& to, const Rgba& color) {
@@ -584,7 +629,8 @@ void NativeDebugDrawAdapter::witnessCone(
     const float range,
     const Rgba& color) {
 
-    if (!(range > 0.0f) || !(halfAngleDegrees > 0.0f)) {
+    if (!(range > 0.0f) || !(halfAngleDegrees > 0.0f)
+        || !std::isfinite(range) || !std::isfinite(halfAngleDegrees) || !std::isfinite(headingDegrees)) {
         return;
     }
 
@@ -602,6 +648,10 @@ void NativeDebugDrawAdapter::witnessCone(
     line(origin, left, color);
     line(origin, right, color);
     line(left, right, color);
+}
+
+std::size_t PlatformServices::cleanupOwnedResources() {
+    return props.cleanupOwned();
 }
 
 } // namespace gco::platform
